@@ -60,6 +60,7 @@ async function loadBoroughs() {
     onEachFeature: (f, layer) => {
       layer.bindTooltip(tooltipHtml(f.properties.name, rates.boroughs[f.properties.name]), { sticky: true, className: "rate-tip" });
       layer.on("click", e => {
+        closeTooltips();
         if (currentBorough) { L.DomEvent.stop(e); assessPoint(e.latlng); }
         else openBorough(f.properties.name, layer);
       });
@@ -70,6 +71,12 @@ async function loadBoroughs() {
   map.fitBounds(boroughLayer.getBounds());
   applyRates(rates);
 }
+
+function closeTooltips() {
+  if (boroughLayer) boroughLayer.eachLayer(l => l.closeTooltip());
+  if (gridLayer) gridLayer.eachLayer(l => l.closeTooltip());
+}
+map.on("zoomstart movestart", closeTooltips);
 
 function styleFor(f, boroughRates) {
   const r = boroughRates[f.properties.name];
@@ -96,6 +103,7 @@ async function refreshRates() {
 
 async function drawGrid() {
   const grid = await getJSON(`/api/heatmap/${encodeURIComponent(currentBorough)}?` + filterParams());
+  closeTooltips();
   if (gridLayer) map.removeLayer(gridLayer);
   gridLayer = L.geoJSON(grid, {
     style: f => ({ color: "#222", weight: 0.4, fillColor: color(f.properties.rate), fillOpacity: 0.7 }),
@@ -114,6 +122,7 @@ async function openBorough(name, layer) {
 }
 
 function backToLondon() {
+  closeTooltips();
   currentBorough = null;
   if (gridLayer) { map.removeLayer(gridLayer); gridLayer = null; }
   document.getElementById("back").hidden = true;
@@ -163,7 +172,7 @@ let pointMarker = null, pointLatLng = null;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-map.on("click", e => { if (currentBorough) assessPoint(e.latlng); });
+map.on("click", e => { closeTooltips(); if (currentBorough) assessPoint(e.latlng); });
 
 function pointParams(latlng) {
   const p = filterParams();

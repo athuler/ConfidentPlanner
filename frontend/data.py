@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 import time
 from pathlib import Path
 
@@ -33,6 +34,7 @@ class DataStore:
         self.years: list[int] = []
         self.rows_total = 0
         self.rows_decided = 0
+        self._lock = threading.Lock()
 
     def _candidate_files(self) -> dict[str, float]:
         files = {p.name: p.stat().st_mtime for p in self.dir.glob("applications_enriched_*.parquet")}
@@ -46,6 +48,12 @@ class DataStore:
         files = self._candidate_files()
         if files == self.files:
             return
+        with self._lock:
+            if files == self.files:  # another thread just reloaded
+                return
+            self._load(files)
+
+    def _load(self, files: dict[str, float]) -> None:
         t0 = time.perf_counter()
         frames = []
         for name in sorted(files):
