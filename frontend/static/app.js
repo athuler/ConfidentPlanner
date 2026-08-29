@@ -70,8 +70,8 @@ async function loadBoroughs() {
         if (currentBorough) { L.DomEvent.stop(e); assessPoint(e.latlng); }
         else openBorough(f.properties.name, layer);
       });
-      layer.on("mouseover", () => layer.setStyle({ weight: 3 }));
-      layer.on("mouseout", () => layer.setStyle({ weight: currentBorough === f.properties.name ? 3 : 1 }));
+      layer.on("mouseover", () => { if (!currentBorough) layer.setStyle({ weight: 3 }); });
+      layer.on("mouseout", () => { if (!currentBorough) layer.setStyle({ weight: 1 }); });
     },
   }).addTo(map);
   map.fitBounds(boroughLayer.getBounds());
@@ -87,8 +87,27 @@ map.on("zoomstart movestart", closeTooltips);
 
 function styleFor(f, boroughRates) {
   const r = boroughRates[f.properties.name];
-  const dimmed = currentBorough && currentBorough !== f.properties.name;
-  return { color: "#334", weight: currentBorough === f.properties.name ? 3 : 1, fillColor: color(r ? r.rate : null), fillOpacity: dimmed ? 0.15 : (currentBorough ? 0.05 : 0.75) };
+  if (currentBorough) {
+    if (currentBorough === f.properties.name) return { color: "#223", weight: 3, fillColor: "#ffffff", fillOpacity: 0 };
+    return { color: "#d3d8de", weight: 1, fillColor: "#ffffff", fillOpacity: 0.85 };  // fade everything else away
+  }
+  return { color: "#334", weight: 1, fillColor: color(r ? r.rate : null), fillOpacity: 0.75 };
+}
+
+function setBoroughInteractivity(focused) {
+  boroughLayer.eachLayer(l => {
+    const name = l.feature.properties.name;
+    l.closeTooltip();
+    if (focused) {
+      l.unbindTooltip();                                   // no borough popovers while focused
+      const el = l.getElement();
+      if (el) el.classList.toggle("leaflet-interactive", name === currentBorough); // faded boroughs ignore the mouse
+    } else {
+      l.bindTooltip(tooltipHtml(name, lastBoroughRates[name]), { sticky: true, className: "rate-tip" });
+      const el = l.getElement();
+      if (el) el.classList.add("leaflet-interactive");
+    }
+  });
 }
 
 function applyRates(rates) {
@@ -98,7 +117,7 @@ function applyRates(rates) {
   boroughLayer.eachLayer(layer => {
     const name = layer.feature.properties.name;
     layer.setStyle(styleFor(layer.feature, rates.boroughs));
-    layer.setTooltipContent(tooltipHtml(name, rates.boroughs[name]));
+    if (layer.getTooltip()) layer.setTooltipContent(tooltipHtml(name, rates.boroughs[name]));
   });
 }
 
@@ -125,6 +144,7 @@ async function openBorough(name, layer) {
   document.getElementById("back").hidden = false;
   map.fitBounds(layer.getBounds(), { padding: [20, 20] });
   boroughLayer.eachLayer(l => l.setStyle(styleFor(l.feature, lastBoroughRates)));
+  setBoroughInteractivity(true);
   await drawGrid();
 }
 
@@ -134,6 +154,7 @@ function backToLondon() {
   if (gridLayer) { map.removeLayer(gridLayer); gridLayer = null; }
   document.getElementById("back").hidden = true;
   document.getElementById("view-title").textContent = "All boroughs";
+  setBoroughInteractivity(false);
   map.fitBounds(boroughLayer.getBounds());
   refreshRates();
 }
