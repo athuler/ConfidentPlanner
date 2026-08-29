@@ -43,3 +43,14 @@ input[type=number] { width: 70px; }
 
 #point-box .section-title { font-weight: 600; font-size: 13px; margin: 10px 0 2px; }
 #point-box .yearchart { width: 100%; height: 90px; display: block; margin: 2px 0; }
+
+/* segmented button group (population density) */
+.btn-group { display: flex; gap: 0; border: 1px solid #c8ced6; border-radius: 8px; overflow: hidden; }
+.btn-group button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px; border: none; border-right: 1px solid #c8ced6; border-radius: 0; background: #fff; color: #1d2430; line-height: 1.2; }
+.btn-group button:last-child { border-right: none; }
+.btn-group button .icon { font-size: 20px; }
+.btn-group button .lbl { font-weight: 600; font-size: 12px; text-transform: capitalize; }
+.btn-group button .rng { font-size: 10px; color: #6b7684; }
+.btn-group button:hover { background: #eef1f5; }
+.btn-group button[aria-pressed=true] { background: #2b8cbe; color: #fff; }
+.btn-group button[aria-pressed=true] .rng { color: #e3eef7; }

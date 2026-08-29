@@ -29,7 +29,7 @@ function filterParams() {
   const months = [...f.querySelectorAll("#months input:checked")].map(i => i.value);
   const days = [...f.querySelectorAll("#days input:checked")].map(i => i.value);
   const types = [...f.querySelectorAll("#app-types input:checked")].map(i => i.value);
-  const density = [...f.querySelectorAll("#density input:checked")].map(i => i.value);
+  const density = [...f.querySelectorAll("#density button[aria-pressed=true]")].map(b => b.dataset.value);
   if (density.length) p.set("density", density.join(","));
   if (months.length) p.set("months", months.join(","));
   if (days.length) p.set("days", days.join(","));
@@ -175,10 +175,18 @@ applyRates = function (rates) { lastBoroughRates = rates.boroughs; _applyRates(r
 function buildFilters(opts) {
   const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const density = document.getElementById("density");
+  const ICONS = { low: "🏡", medium: "🏘️", high: "🏙️" };
+  const group = document.createElement("div"); group.className = "btn-group";
   (opts.density_bands || []).forEach(b => {
     const range = b.max === null ? `> ${b.min.toLocaleString()}` : b.min === 0 ? `< ${b.max.toLocaleString()}` : `${b.min.toLocaleString()}–${b.max.toLocaleString()}`;
-    density.insertAdjacentHTML("beforeend", `<label><input type="checkbox" name="density" value="${b.value}"> ${b.value} <small>(${range} /km², ${b.n.toLocaleString()})</small></label>`);
+    group.insertAdjacentHTML("beforeend", `<button type="button" data-value="${b.value}" aria-pressed="false" title="${b.n.toLocaleString()} decided applications">
+        <span class="icon">${ICONS[b.value] || ""}</span><span class="lbl">${b.value}</span><span class="rng">${range} /km²</span></button>`);
   });
+  density.appendChild(group);
+  group.querySelectorAll("button").forEach(btn => btn.addEventListener("click", () => {
+    btn.setAttribute("aria-pressed", btn.getAttribute("aria-pressed") === "true" ? "false" : "true");
+    f.dispatchEvent(new Event("change"));   // same debounced refresh path as the other filters
+  }));
   const months = document.getElementById("months");
   opts.months.forEach(m => months.insertAdjacentHTML("beforeend", `<label><input type="checkbox" name="months" value="${m}"> ${names[m - 1]}</label>`));
   const days = document.getElementById("days");
@@ -193,7 +201,7 @@ function buildFilters(opts) {
   SCALE.forEach((c, i) => scale.insertAdjacentHTML("beforeend", `<div style="background:${c}">${labels[i]}</div>`));
 
   f.addEventListener("change", () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refreshRates, 150); });
-  document.getElementById("reset").addEventListener("click", () => { f.reset(); refreshRates(); });
+  document.getElementById("reset").addEventListener("click", () => { f.reset(); f.querySelectorAll("#density button").forEach(b => b.setAttribute("aria-pressed", "false")); refreshRates(); });
   document.getElementById("back").addEventListener("click", backToLondon);
 }
 
