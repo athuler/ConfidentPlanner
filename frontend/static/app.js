@@ -75,7 +75,10 @@ async function loadBoroughs() {
     },
   }).addTo(map);
   map.fitBounds(boroughLayer.getBounds());
-  map.setMaxBounds(boroughLayer.getBounds().pad(0.15));
+  // generous horizontal slack: the point box (right) and sidebar (left) cover parts of the viewport
+  const b = boroughLayer.getBounds();
+  const dLng = (b.getEast() - b.getWest()) * 0.6, dLat = (b.getNorth() - b.getSouth()) * 0.25;
+  map.setMaxBounds(L.latLngBounds([b.getSouth() - dLat, b.getWest() - dLng], [b.getNorth() + dLat, b.getEast() + dLng]));
   applyRates(rates);
 }
 
@@ -142,7 +145,7 @@ async function openBorough(name, layer) {
   currentBorough = name;
   console.log("open borough", name);
   document.getElementById("back").hidden = false;
-  map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+  map.fitBounds(layer.getBounds(), { paddingTopLeft: [20, 20], paddingBottomRight: [360, 20] }); // keep the borough clear of the point box
   boroughLayer.eachLayer(l => l.setStyle(styleFor(l.feature, lastBoroughRates)));
   setBoroughInteractivity(true);
   await drawGrid();
