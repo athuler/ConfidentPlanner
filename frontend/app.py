@@ -88,7 +88,7 @@ def create_app() -> Flask:
     def heatmap(borough: str):
         t0 = time.perf_counter()
         df = store.apply_filters(request.args)
-        payload = store.grid(df, borough, float(request.args.get("cell_m", 300)))
+        payload = store.grid(df, borough, float(request.args.get("cell_m", 500)))
         log.info("/api/heatmap/%s in %.0f ms", borough, (time.perf_counter() - t0) * 1000)
         return jsonify(payload)
 

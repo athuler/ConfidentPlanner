@@ -77,7 +77,7 @@ python run.py            # http://localhost:5000  (--port to change)
 ```
 
 One page: a London map with each borough coloured by the share of decided applications that were approved.
-Click a borough to zoom in and see a ~300 m grid heatmap of approval rates; click anywhere inside it to assess
+Click a borough to zoom in and see a ~500 m grid heatmap of approval rates; click anywhere inside it to assess
 that point — a box shows the likelihood (nearest decided applications within 250 m–2 km), the rate among
 neighbours with the same conservation/flood status, the borough average, and the point's features
 (conservation area, flood zone, ward population density, distance to park), with day-of-week and month toggles.
@@ -90,4 +90,4 @@ finishes another year.
 
 API: `/api/rates`, `/api/heatmap/<borough>`, `/api/point?lat=&lon=`, `/api/options`, `/api/boroughs.geojson` —
 all accept the filter query params `flood=any|yes|no`, `conservation=any|yes|no`, `months=1,2`, `days=Monday,…`,
-`app_types=…`, `year_min`, `year_max`.
+`app_types=…`, `density=low,medium,high`, `year_min`, `year_max`.

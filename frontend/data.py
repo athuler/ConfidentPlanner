@@ -23,6 +23,8 @@ POINT_RADII_M = [250, 500, 1000, 2000]
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 MIN_N_BOROUGH = 5
 MIN_N_CELL = 3
+DENSITY_BANDS = [("low", 0, 5000), ("medium", 5000, 10000), ("high", 10000, None)]  # persons/km2 (ward)
+DEFAULT_CELL_M = 500.0
 
 
 class DataStore:
@@ -78,6 +80,7 @@ class DataStore:
         df["Lat"] = pd.to_numeric(df["Lat"], errors="coerce")
         df["Lon"] = pd.to_numeric(df["Lon"], errors="coerce")
         df["density"] = pd.to_numeric(df["Population Density"], errors="coerce")
+        df["density_band"] = pd.cut(df["density"], bins=[-np.inf, 5000, 10000, np.inf], labels=["low", "medium", "high"]).astype("string")
         df["park_m"] = pd.to_numeric(df["Distance to Park (m)"], errors="coerce")
         # local metric coordinates for nearest-neighbour searches
         df["x_m"] = df["Lon"] * 111_320 * math.cos(math.radians(51.5))
@@ -112,6 +115,10 @@ class DataStore:
             types = {t.strip() for t in args["app_types"].split(",") if t.strip()}
             if types:
                 mask &= df["app_type"].isin(types).fillna(False)
+        if args.get("density") and args["density"] != "any":
+            bands = {b.strip() for b in args["density"].split(",") if b.strip() in ("low", "medium", "high")}
+            if bands:
+                mask &= df["density_band"].isin(bands).fillna(False)
         if args.get("year_min"):
             mask &= (df["year"] >= int(args["year_min"])).fillna(False)
         if args.get("year_max"):
@@ -137,7 +144,7 @@ class DataStore:
     def overall(self, df: pd.DataFrame) -> dict:
         return self._rate(df)
 
-    def grid(self, df: pd.DataFrame, borough: str, cell_m: float = 300.0) -> dict:
+    def grid(self, df: pd.DataFrame, borough: str, cell_m: float = DEFAULT_CELL_M) -> dict:
         g = df[(df["Borough"] == borough) & df["Lat"].notna() & df["Lon"].notna()]
         if g.empty:
             return {"type": "FeatureCollection", "features": [], "stats": self._rate(g), "cell_m": cell_m}
@@ -169,6 +176,10 @@ class DataStore:
             "app_types": [{"value": str(k), "n": int(v)} for k, v in types.items()],
             "year_min": self.years[0] if self.years else None,
             "year_max": self.years[-1] if self.years else None,
+            "density_bands": [
+                {"value": name, "min": lo, "max": hi, "n": int((df["density_band"] == name).sum())}
+                for name, lo, hi in DENSITY_BANDS
+            ],
         }
 
     def point_estimate(self, df: pd.DataFrame, lat: float, lon: float, geo_features: dict) -> dict:
@@ -212,8 +223,16 @@ class DataStore:
             "by_month": by_month,
             "nearby_features": {
                 "population_density": (float(nearest["density"].median()) if nearest["density"].notna().any() else None),
+                "density_band": density_band(float(nearest["density"].median())) if nearest["density"].notna().any() else None,
                 "ward": (str(nearest["ward_name"].dropna().mode().iloc[0]) if nearest["ward_name"].notna().any() else None),
                 "distance_to_park_m": (float(nearest["park_m"].median()) if nearest["park_m"].notna().any() else None),
                 "nearest_app_m": float(d[order[0]]) if len(order) else None,
             },
         }
+
+
+def density_band(value: float) -> str | None:
+    for name, lo, hi in DENSITY_BANDS:
+        if value >= lo and (hi is None or value < hi):
+            return name
+    return None

@@ -27,6 +27,8 @@ function filterParams() {
   const months = [...f.querySelectorAll("#months input:checked")].map(i => i.value);
   const days = [...f.querySelectorAll("#days input:checked")].map(i => i.value);
   const types = [...f.querySelectorAll("#app-types input:checked")].map(i => i.value);
+  const density = [...f.querySelectorAll("#density input:checked")].map(i => i.value);
+  if (density.length) p.set("density", density.join(","));
   if (months.length) p.set("months", months.join(","));
   if (days.length) p.set("days", days.join(","));
   if (types.length) p.set("app_types", types.join(","));
@@ -142,6 +144,11 @@ applyRates = function (rates) { lastBoroughRates = rates.boroughs; _applyRates(r
 
 function buildFilters(opts) {
   const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const density = document.getElementById("density");
+  (opts.density_bands || []).forEach(b => {
+    const range = b.max === null ? `> ${b.min.toLocaleString()}` : b.min === 0 ? `< ${b.max.toLocaleString()}` : `${b.min.toLocaleString()}–${b.max.toLocaleString()}`;
+    density.insertAdjacentHTML("beforeend", `<label><input type="checkbox" name="density" value="${b.value}"> ${b.value} <small>(${range} /km², ${b.n.toLocaleString()})</small></label>`);
+  });
   const months = document.getElementById("months");
   opts.months.forEach(m => months.insertAdjacentHTML("beforeend", `<label><input type="checkbox" name="months" value="${m}"> ${names[m - 1]}</label>`));
   const days = document.getElementById("days");
@@ -230,7 +237,7 @@ function renderPoint(r, day, month) {
       <tr><td>Ward (nearest apps)</td><td>${nf.ward || "–"}</td></tr>
       <tr><td>Conservation area</td><td class="${f.conservation_area ? "yes" : "no"}">${f.conservation_area ? "Yes – " + (f.conservation_area_name || "") : "No"}</td></tr>
       <tr><td>Flood risk</td><td class="${f.flood_zone ? "yes" : "no"}">${f.flood_zone ? "Zone " + f.flood_zone + (f.flood_risk_type.length ? " (" + f.flood_risk_type.join(", ") + ")" : "") : "Not in a flood zone"}</td></tr>
-      <tr><td>Population density</td><td>${fmt(nf.population_density)} /km² (ward, Census 2021)</td></tr>
+      <tr><td>Population density</td><td>${fmt(nf.population_density)} /km² ${nf.density_band ? "<b>(" + nf.density_band + ")</b>" : ""} <small>ward, Census 2021</small></td></tr>
       <tr><td>Distance to park</td><td>${fmt(nf.distance_to_park_m)} m</td></tr>
       <tr><td>Nearest application</td><td>${fmt(nf.nearest_app_m)} m away</td></tr>
     </table>`;
