@@ -6,6 +6,10 @@ Directories
 - FrontEnd
 - Data: raw data sources
 
+Quick start: `python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`, process a year with
+`python Processing/processing.py --years 2026 --per-year`, then `python run.py` and open http://localhost:5000
+(details under [Running the local server](#running-the-local-server)).
+
 ## Processing
 
 `Processing/processing.py` builds the modelling dataset. By default it bulk-downloads every planning
@@ -71,10 +75,33 @@ A repeat run makes no API calls except one cheap count per year. Set `LONDON_DAT
 
 ## Web app (`frontend/`, `run.py`)
 
+### Running the local server
+
 ```bash
+# 1. one-time setup (same venv as the pipeline)
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+
+# 2. make sure there is data to show: at least one processed year
+python Processing/processing.py --years 2026 --per-year          # quick; ~a few minutes
+# python Processing/processing.py --years 2016-2026 --per-year   # everything, newest year first (can run in the background)
+
+# 3. start the server
 source venv/bin/activate
-python run.py            # http://localhost:5000  (--port to change)
+python run.py                       # http://localhost:5000
 ```
+
+Flags: `--port 5000` (change the port), `--host 0.0.0.0` (default: reachable from other machines on your network; use
+`--host 127.0.0.1` for local only), `--debug` (Flask auto-reload; slower, reloads the data on every code edit).
+Stop it with `Ctrl+C`.
+
+Startup takes ~10–30 s while it loads every `Data/processed/applications_enriched_<year>.parquet`, downloads the
+borough boundaries once (cached in `Data/reference/`), and loads the ML model from `Model/` if present — watch for
+`Running on http://…` in the terminal. If `Data/processed/` is empty the map has no colours: run step 2 first.
+You can keep the pipeline running while the server is up; the app picks up each newly finished year automatically.
+
+Environment quirks: the app needs `scikit-learn>=1.9` for the ML toggle (otherwise it stays greyed out with the
+error shown under the model buttons); on WSL2 open the URL from a Windows browser as usual.
 
 One page: a London map with each borough coloured by the share of decided applications that were approved.
 Click a borough to zoom in and see a ~500 m grid heatmap of approval rates; the overlay shows the borough's stats (by conservation/flood/density/day/month/application type);
