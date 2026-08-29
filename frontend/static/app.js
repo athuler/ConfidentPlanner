@@ -8,6 +8,8 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19, attribution: "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
 }).addTo(map); // desaturated via CSS (.leaflet-tile-pane filter) - no API key needed
 let maskLayer = null;
+// the overlay modal sits inside #map: keep its clicks and wheel events from reaching Leaflet
+(() => { const box = document.getElementById("point-box"); L.DomEvent.disableClickPropagation(box); L.DomEvent.disableScrollPropagation(box); })();
 
 let boroughLayer = null, gridLayer = null, currentBorough = null, boroughsGeo = null;
 let debounceTimer = null;
