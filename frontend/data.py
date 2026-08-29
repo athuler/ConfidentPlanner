@@ -15,9 +15,9 @@ log = logging.getLogger("frontend.data")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROCESSED_DIR = REPO_ROOT / "Data" / "processed"
 
-COLUMNS = ["Borough", "Approved?", "Lat", "Lon", "Month", "Day of the Week", "Flood risk?", "flood_zone",
+COLUMNS = ["dh_id", "Borough", "Approved?", "Lat", "Lon", "Month", "Day of the Week", "Flood risk?", "flood_zone",
            "Conservation Area?", "conservation_area_name", "Application type", "Valid date", "Population Density",
-           "ward_name", "Distance to Park (m)"]
+           "ward_name", "Distance to Park (m)", "Population Density (OA)"]
 POINT_MIN_N = 30
 POINT_RADII_M = [250, 500, 1000, 2000]
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -37,6 +37,7 @@ class DataStore:
         self.rows_total = 0
         self.rows_decided = 0
         self._lock = threading.Lock()
+        self.ml_status: dict = {"state": "off", "error": None}
 
     def _candidate_files(self) -> dict[str, float]:
         files = {p.name: p.stat().st_mtime for p in self.dir.glob("applications_enriched_*.parquet")}
@@ -62,7 +63,9 @@ class DataStore:
             path = self.dir / name
             try:
                 f = pd.read_parquet(path)
-                frames.append(f[[c for c in COLUMNS if c in f.columns]])
+                f = f[[c for c in COLUMNS if c in f.columns]]
+                f["source"] = name
+                frames.append(f)
                 log.info("loaded %s: %d rows", name, len(f))
             except Exception as exc:  # noqa: BLE001 - file may be mid-write
                 log.warning("could not load %s (%s) - skipping this time", name, exc)
@@ -71,8 +74,12 @@ class DataStore:
         self.rows_total = len(df)
         df["year"] = pd.to_datetime(df["Valid date"], errors="coerce").dt.year.astype("Int64")
         df["approved"] = df["Approved?"].astype("boolean")
+        self._prep_common(df)
         df = df[df["approved"].notna()].copy()
         df["approved"] = df["approved"].astype(bool)
+        self._finish_load(df, files, t0)
+
+    def _prep_common(self, df: pd.DataFrame) -> None:
         df["month"] = pd.to_numeric(df["Month"], errors="coerce").astype("Int64")
         df["flood"] = df["Flood risk?"].astype("boolean")
         df["conservation"] = df["Conservation Area?"].astype("boolean")
@@ -85,6 +92,8 @@ class DataStore:
         # local metric coordinates for nearest-neighbour searches
         df["x_m"] = df["Lon"] * 111_320 * math.cos(math.radians(51.5))
         df["y_m"] = df["Lat"] * 110_574
+
+    def _finish_load(self, df, files, t0):
         self.df, self.files, self.loaded_at = df, files, time.time()
         self.rows_decided = len(df)
         self.years = sorted(int(y) for y in df["year"].dropna().unique())
@@ -93,7 +102,7 @@ class DataStore:
 
     def info(self) -> dict:
         return {"files": sorted(self.files), "rows_total": int(self.rows_total), "rows_decided": int(self.rows_decided),
-                "years": self.years, "loaded_at": self.loaded_at}
+                "years": self.years, "loaded_at": self.loaded_at, "ml": self.ml_status}
 
     def apply_filters(self, args) -> pd.DataFrame:
         df = self.df
@@ -265,6 +274,7 @@ class DataStore:
                 "density_band": density_band(float(nearest["density"].median())) if nearest["density"].notna().any() else None,
                 "ward": (str(nearest["ward_name"].dropna().mode().iloc[0]) if nearest["ward_name"].notna().any() else None),
                 "distance_to_park_m": (float(nearest["park_m"].median()) if nearest["park_m"].notna().any() else None),
+                "population_density_oa": (float(pd.to_numeric(nearest["Population Density (OA)"], errors="coerce").median()) if "Population Density (OA)" in nearest.columns and pd.to_numeric(nearest["Population Density (OA)"], errors="coerce").notna().any() else None),
                 "nearest_app_m": float(d[order[0]]) if len(order) else None,
             },
         }

@@ -1,5 +1,18 @@
 /* Confident Planner map: borough choropleth -> click for in-borough grid heatmap; filters re-query the API. */
-const BREAKS = [0.5, 0.6, 0.7, 0.8, 0.9, 1.01];
+// Adaptive breakpoints: 6 equal bands between the 5th and 95th percentile of the values on screen
+// (same palette in both modes; only the thresholds move so clustered values stay distinguishable).
+let currentBreaks = [0.5, 0.6, 0.7, 0.8, 0.9, 1.01];
+const BREAKS = () => currentBreaks;
+function setScaleFromValues(values) {
+  const v = values.filter(x => x !== null && x !== undefined && !Number.isNaN(x)).sort((a, b) => a - b);
+  if (v.length < 2) return;
+  const q = p => v[Math.min(v.length - 1, Math.max(0, Math.floor(p * (v.length - 1))))];
+  let lo = q(0.05), hi = q(0.95);
+  if (hi - lo < 0.05) { lo = Math.max(0, lo - 0.025); hi = Math.min(1, hi + 0.025); }
+  const step = (hi - lo) / 5;
+  currentBreaks = [1, 2, 3, 4, 5].map(i => lo + i * step).concat([1.01]);
+  renderLegend();
+}
 const SCALE = ["#f1eef6", "#d0d1e6", "#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d"]; // light -> dark = low -> high approval
 const GREY = "#c9ced4";
 
@@ -16,7 +29,8 @@ let debounceTimer = null;
 
 function color(rate) {
   if (rate === null || rate === undefined || Number.isNaN(rate)) return GREY;
-  for (let i = 0; i < BREAKS.length; i++) if (rate < BREAKS[i]) return SCALE[i];
+  const br = BREAKS();
+  for (let i = 0; i < br.length; i++) if (rate < br[i]) return SCALE[i];
   return SCALE[SCALE.length - 1];
 }
 function pct(x) { return x === null || x === undefined ? "n/a" : (100 * x).toFixed(0) + "%"; }
@@ -24,6 +38,8 @@ function pct(x) { return x === null || x === undefined ? "n/a" : (100 * x).toFix
 function filterParams() {
   const f = document.getElementById("filters");
   const p = new URLSearchParams();
+  p.set("model", currentModel());
+  if (isML()) { const d = document.getElementById("ml-description").value.trim(); if (d) p.set("description", d.slice(0, 500)); }
   p.set("flood", f.flood.value);
   p.set("conservation", f.conservation.value);
   const months = [...f.querySelectorAll("#months input:checked")].map(i => i.value);
@@ -39,16 +55,51 @@ function filterParams() {
   return p;
 }
 
+let inflight = 0;
+function setLoading(delta) {
+  inflight = Math.max(0, inflight + delta);
+  document.getElementById("loading").hidden = inflight === 0;
+  document.getElementById("sidebar").classList.toggle("pending", inflight > 0);
+}
 async function getJSON(url) {
   const t0 = performance.now();
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`${url} -> ${r.status}`);
-  const j = await r.json();
-  console.log(`${url} ${(performance.now() - t0).toFixed(0)} ms`);
-  return j;
+  setLoading(1);
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${url} -> ${r.status}`);
+    const j = await r.json();
+    console.log(`${url} ${(performance.now() - t0).toFixed(0)} ms`);
+    return j;
+  } finally {
+    setLoading(-1);
+  }
+}
+
+function currentModel() {
+  const b = document.querySelector("#model-group button[aria-pressed=true]");
+  return b ? b.dataset.value : "historical";
+}
+function isML() { return currentModel() === "ml"; }
+
+function renderLegend() {
+  const scale = document.getElementById("legend-scale");
+  const br = currentBreaks, p = x => Math.round(100 * x);
+  const labels = SCALE.map((_, i) => i === 0 ? `<${p(br[0])}%` : i === SCALE.length - 1 ? `${p(br[i - 1])}+` : `${p(br[i - 1])}–${p(br[i])}`);
+  scale.innerHTML = "";
+  SCALE.forEach((c, i) => scale.insertAdjacentHTML("beforeend", `<div style="background:${c}">${labels[i]}</div>`));
+}
+
+function updateModelStatus(ml) {
+  const st = document.getElementById("model-status"), btn = document.querySelector("#model-group button[data-value=ml]");
+  if (!ml || ml.state === "off") { st.textContent = "ML model: not loaded"; btn.disabled = true; return; }
+  if (ml.state === "error") { st.textContent = "ML model failed: " + ml.error; btn.disabled = true; return; }
+  btn.disabled = false;
+  st.textContent = isML() ? "Scores a hypothetical new application at each location with your settings." : "";
+  document.getElementById("ml-desc-wrap").hidden = !isML();
 }
 
 function showDataset(ds) {
+  if (ds.ml) updateModelStatus(ds.ml);
   const years = ds.years && ds.years.length ? `${ds.years[0]}–${ds.years[ds.years.length - 1]}` : "–";
   document.getElementById("dataset").textContent =
     `${ds.rows_decided.toLocaleString()} decided of ${ds.rows_total.toLocaleString()} applications · years ${years} · ${ds.files.length} file(s)`;
@@ -56,6 +107,7 @@ function showDataset(ds) {
 
 function tooltipHtml(name, r) {
   if (!r) return `<b>${name}</b><br>no data`;
+  if (isML()) return `<b>${name}</b><br>${pct(r.rate)} predicted<br>for a new application at the borough centre`;
   return `<b>${name}</b><br>${pct(r.rate)} approved<br>${r.approved.toLocaleString()} of ${r.n.toLocaleString()} decided`;
 }
 
@@ -118,7 +170,13 @@ function setBoroughInteractivity(focused) {
 
 function applyRates(rates) {
   document.getElementById("overall-rate").textContent = pct(rates.overall.rate);
-  document.getElementById("overall-n").textContent = `${rates.overall.approved.toLocaleString()} approved of ${rates.overall.n.toLocaleString()} decided (current filters)`;
+  document.getElementById("overall-n").textContent = isML()
+    ? `average of the predictions at the ${rates.overall.n} borough centres (your settings + description)`
+    : `${rates.overall.approved.toLocaleString()} approved of ${rates.overall.n.toLocaleString()} decided (current filters)`;
+  document.getElementById("legend-title").textContent = isML() ? "Predicted probability for a new application" : "Approval rate";
+  updateModelStatus(rates.dataset && rates.dataset.ml);
+  if (!currentBorough) setScaleFromValues(Object.values(rates.boroughs).map(r => r.rate));
+  document.querySelector("#overall-rate + small").textContent = isML() ? " predicted" : " approved";
   showDataset(rates.dataset);
   boroughLayer.eachLayer(layer => {
     const name = layer.feature.properties.name;
@@ -136,10 +194,11 @@ async function refreshRates() {
 async function drawGrid() {
   const grid = await getJSON(`/api/heatmap/${encodeURIComponent(currentBorough)}?` + filterParams());
   closeTooltips();
+  setScaleFromValues(grid.features.map(f => f.properties.rate));
   if (gridLayer) map.removeLayer(gridLayer);
   gridLayer = L.geoJSON(grid, {
     style: f => ({ color: "#222", weight: 0.4, fillColor: color(f.properties.rate), fillOpacity: 0.7 }),
-    onEachFeature: (f, layer) => layer.bindTooltip(`${pct(f.properties.rate)} approved<br>${f.properties.approved} of ${f.properties.n} decided in this ${grid.cell_m} m cell`, { sticky: true, className: "rate-tip" }),
+    onEachFeature: (f, layer) => layer.bindTooltip(isML() ? `${pct(f.properties.rate)} predicted<br>for a new application in this ${grid.cell_m} m cell` : `${pct(f.properties.rate)} approved<br>${f.properties.approved} of ${f.properties.n} decided in this ${grid.cell_m} m cell`, { sticky: true, className: "rate-tip" }),
   }).addTo(map);
   document.getElementById("view-title").textContent = `${currentBorough}: ${pct(grid.stats.rate)} (${grid.stats.n.toLocaleString()} decided, ${grid.features.length} cells)`;
 }
@@ -208,13 +267,23 @@ function buildFilters(opts) {
   const f = document.getElementById("filters");
   if (opts.year_min) { f.year_min.placeholder = opts.year_min; f.year_min.min = opts.year_min; f.year_max.min = opts.year_min; }
   if (opts.year_max) { f.year_max.placeholder = opts.year_max; f.year_min.max = opts.year_max; f.year_max.max = opts.year_max; }
-  const scale = document.getElementById("legend-scale");
-  const labels = ["<50%", "50–60", "60–70", "70–80", "80–90", "90+"];
-  SCALE.forEach((c, i) => scale.insertAdjacentHTML("beforeend", `<div style="background:${c}">${labels[i]}</div>`));
+  renderLegend();
 
   f.addEventListener("change", () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refreshRates, 150); });
   document.getElementById("reset").addEventListener("click", () => { f.reset(); f.querySelectorAll("#density button, #app-types button").forEach(b => b.setAttribute("aria-pressed", "false")); refreshRates(); });
   document.getElementById("back").addEventListener("click", backToLondon);
+  const ta = document.getElementById("ml-description"), cnt = document.getElementById("desc-count"), ex = document.getElementById("desc-examples");
+  let descTimer = null;
+  ta.addEventListener("input", () => { cnt.textContent = `${ta.value.length} / 500`; clearTimeout(descTimer); descTimer = setTimeout(() => f.dispatchEvent(new Event("change")), 600); });
+  document.getElementById("desc-help").addEventListener("click", e => { e.preventDefault(); ex.hidden = !ex.hidden; });
+  ex.querySelectorAll("li").forEach(li => li.addEventListener("click", () => { ta.value = li.textContent.trim(); cnt.textContent = `${ta.value.length} / 500`; ex.hidden = true; f.dispatchEvent(new Event("change")); }));
+  document.addEventListener("click", e => { if (!ex.hidden && !ex.contains(e.target) && e.target.id !== "desc-help") ex.hidden = true; });
+  document.querySelectorAll("#model-group button").forEach(btn => btn.addEventListener("click", () => {
+    if (btn.disabled) return;
+    document.querySelectorAll("#model-group button").forEach(b => b.setAttribute("aria-pressed", b === btn ? "true" : "false"));
+    console.log("model ->", btn.dataset.value);
+    f.dispatchEvent(new Event("change"));
+  }));
 }
 
 (async function init() {
@@ -295,7 +364,8 @@ function yearChart(byYear, refByYear, refLabel) {
 }
 
 function rateRow(label, r) {
-  return `<tr><td>${label}</td><td>${r && r.n ? `${pct(r.rate)} <small class="muted">(${r.n.toLocaleString()})</small>` : "<small class='muted'>–</small>"}</td></tr>`;
+  if (!r || r.rate === null || r.rate === undefined) return `<tr><td>${label}</td><td><small class='muted'>–</small></td></tr>`;
+  return `<tr><td>${label}</td><td>${pct(r.rate)}${r.n ? ` <small class="muted">(${r.n.toLocaleString()})</small>` : ""}</td></tr>`;
 }
 
 async function showBoroughBox() {
@@ -310,14 +380,14 @@ async function showBoroughBox() {
     box.innerHTML = `
       <h2>${name} <button class="close" title="close">×</button></h2>
       <div class="big">${pct(s.rate)}</div>
-      <div class="muted">${s.approved.toLocaleString()} approved of ${s.n.toLocaleString()} decided (current filters) · London ${pct(L_.rate)}</div>
+      <div class="muted">${isML() ? `predicted for a new ${r.settings["Application type"]}${r.settings.type_defaulted ? " (default)" : ""} application at the borough centre${r.settings && r.settings.description ? "" : " — <b>add a description for a better estimate</b>"} · historical ${pct(r.historical_stats.rate)}` : `${s.approved.toLocaleString()} approved of ${s.n.toLocaleString()} decided (current filters)`} · London ${pct(L_.rate)}</div>
       <div class="muted" style="margin:6px 0 4px"><b>Click anywhere in the borough</b> for a point assessment.</div>
-      <div class="section-title">By year</div>
-      ${yearChart(r.by_year, r.london_by_year, "London")}
+      ${isML() ? `<div class="muted">Each row below changes one feature of the hypothetical application. Yearly history is not applicable to the model.</div>` : `<div class="section-title">By year</div>
+      ${yearChart(r.by_year, r.london_by_year, "London")}`}
       <table>
-        <tr><th colspan="2">By year</th></tr>${Object.keys(r.by_year).map(Number).sort((a, b) => a - b).map(yr => rateRow(String(yr), r.by_year[yr])).join("")}
+        ${isML() ? "" : `<tr><th colspan="2">By year</th></tr>${Object.keys(r.by_year).map(Number).sort((a, b) => a - b).map(yr => rateRow(String(yr), r.by_year[yr])).join("")}`}
         <tr><th colspan="2">Conservation area</th></tr>${rateRow("inside", r.conservation.inside)}${rateRow("outside", r.conservation.outside)}
-        <tr><th colspan="2">Flood risk</th></tr>${rateRow("in zone", r.flood.in_zone)}${rateRow("not in zone", r.flood.not_in_zone)}
+        ${isML() ? "" : `<tr><th colspan="2">Flood risk</th></tr>${rateRow("in zone", r.flood.in_zone)}${rateRow("not in zone", r.flood.not_in_zone)}`}
         <tr><th colspan="2">Population density (ward)</th></tr>${["low", "medium", "high"].map(b => rateRow(b, r.density[b])).join("")}
         <tr><th colspan="2">Day of the week</th></tr>${DAYS.map(d => rateRow(d.slice(0, 3), r.by_day[d])).join("")}
         <tr><th colspan="2">Month</th></tr>${MONTHS.map((m, i) => rateRow(m, r.by_month[i + 1])).join("")}
@@ -337,8 +407,13 @@ function renderPoint(r, day, month) {
   const box = document.getElementById("point-box");
   box.innerHTML = `
     <h2>Point in ${f.borough || "outside London"} <span><button class="close" id="to-borough" title="borough stats" style="font-size:12px">◀ borough</button> <button class="close" title="close">×</button></span></h2>
+    ${r.model === "ml" ? `
+    <div class="big">${r.model_prediction !== null && r.model_prediction !== undefined ? pct(r.model_prediction) : "n/a"}</div>
+    <div class="muted"><b>ML prediction for a new application here</b> — ${r.settings.description ? "with your description" : "<b>no description yet: add one for a better estimate</b>"}; type ${r.settings["Application type"]}${r.settings.type_defaulted ? " (default — pick one in the sidebar)" : ""}, ${MONTHS[r.settings.Month - 1]}, ${r.settings["Day of the Week"]}</div>
+    <div class="muted">historical: ${r.historical ? `${pct(r.historical.rate)} (${r.historical.approved} of ${r.historical.n} decided within ${fmt(r.historical.radius_m)} m)` : "n/a"}</div>
+    <div class="muted">if in a conservation area ${pct(r.sensitivities.conservation.inside.rate)} · outside ${pct(r.sensitivities.conservation.outside.rate)} · ${r.sensitivities.app_types.map(t => `${t.value} ${pct(t.rate)}`).join(" · ")}</div>` : `
     <div class="big">${pct(est.rate)}</div>
-    <div class="muted">${est.approved} of ${est.n} decided applications within ${fmt(est.radius_m)} m (current filters)</div>
+    <div class="muted">${est.approved} of ${est.n} decided applications within ${fmt(est.radius_m)} m (current filters)</div>`}
     <div class="muted">${pct(r.similar.rate)} among the ${r.similar.n} of those with the same conservation/flood status
       · borough average ${r.borough_rate ? pct(r.borough_rate.rate) : "n/a"}</div>
     <div class="row">
@@ -346,8 +421,8 @@ function renderPoint(r, day, month) {
       <label>Month<select name="month">${opt(r.by_month ? Object.keys(r.by_month).map(Number).sort((a, b) => a - b) : [], month, m => MONTHS[m - 1])}</select></label>
     </div>
     ${byDay ? `<div class="muted">${day}: ${pct(byDay.rate)} (${byDay.n} nearby)</div>` : ""}
-    <div class="section-title">This ${fmt(r.cell.cell_m)} m cell: ${pct(r.cell.stats.rate)} <small class="muted">(${r.cell.stats.n} decided)</small></div>
-    ${r.cell.by_year ? yearChart(r.cell.by_year, r.cell.borough_by_year, (f.borough || "borough") + " average") : `<div class="muted">not enough data for a yearly trend in this cell (n = ${r.cell.stats.n}; needs ≥ 3 decisions in each of ≥ 3 years)</div>`}
+    ${r.model === "ml" ? "" : `<div class="section-title">This ${fmt(r.cell.cell_m)} m cell: ${pct(r.cell.stats.rate)} <small class="muted">(${r.cell.stats.n} decided)</small></div>
+    ${r.cell.by_year ? yearChart(r.cell.by_year, r.cell.borough_by_year, (f.borough || "borough") + " average") : `<div class="muted">not enough data for a yearly trend in this cell (n = ${r.cell.stats.n}; needs ≥ 3 decisions in each of ≥ 3 years)</div>`}`}
     ${byMonth ? `<div class="muted">${MONTHS[month - 1]}: ${pct(byMonth.rate)} (${byMonth.n} nearby)</div>` : ""}
     <table>
       <tr><td>Location</td><td>${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}</td></tr>

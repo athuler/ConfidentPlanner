@@ -88,6 +88,20 @@ The app reads every `Data/processed/applications_enriched_<year>.parquet` and re
 background pipeline (`python Processing/processing.py --years 2016-2026 --per-year`, newest year first)
 finishes another year.
 
+### Prediction models
+
+The sidebar's bottom toggle switches every view between **Historical** (share of decided applications approved,
+2016–26) and the **ML model** in `Model/` (logistic regression over location, type, borough/ward, site metrics,
+density, park distance, conservation flag and a TF-IDF description embedding; trained 2022–26, AUC ≈ 0.73).
+Stored applications are never scored (their outcomes are known). In ML mode the app scores a **hypothetical new
+application** with your current settings (type, month, weekday, and the description you type in the sidebar box —
+the model relies heavily on the text) at each borough centre, at each heatmap cell centre, and at the point you
+click; the borough/point panels show one-feature-at-a-time sensitivities (day, month, conservation, density, type).
+A hypothetical application is given the fields a real one of its type has (full type e.g. "Householder planning
+permission", decision process "Delegated", no CIL liability) — leaving them blank puts the model out of distribution
+and depresses predictions by ~20 pp. When no single application type is selected, Householder is assumed.
+Pass `model=ml&description=…` on any API call. Tests: `python -m pytest tests -q`.
+
 API: `/api/rates`, `/api/heatmap/<borough>`, `/api/point?lat=&lon=`, `/api/options`, `/api/boroughs.geojson` —
 all accept the filter query params `flood=any|yes|no`, `conservation=any|yes|no`, `months=1,2`, `days=Monday,…`,
 `app_types=…`, `density=low,medium,high`, `year_min`, `year_max`.

@@ -10,6 +10,7 @@ from flask import Flask, jsonify, render_template, request
 
 from .data import DataStore
 from .geo import GeoLookups
+from .predictor import Predictor
 
 log = logging.getLogger("frontend.app")
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -55,6 +56,17 @@ def create_app() -> Flask:
     boroughs = load_boroughs()
     geo = GeoLookups(boroughs)
     mask = london_mask(boroughs)
+    predictor = None
+    try:
+        from .ml import ApprovalModel
+        predictor = Predictor(ApprovalModel(), store, geo, boroughs)
+        store.ml_status = {"state": "ready", "error": None}
+    except Exception as exc:  # noqa: BLE001
+        log.exception("ML model unavailable")
+        store.ml_status = {"state": "error", "error": str(exc)}
+
+    def ml_mode() -> bool:
+        return request.args.get("model") == "ml" and predictor is not None
 
     @app.before_request
     def _refresh():
@@ -79,8 +91,11 @@ def create_app() -> Flask:
     @app.route("/api/rates")
     def rates():
         t0 = time.perf_counter()
-        df = store.apply_filters(request.args)
-        payload = {"overall": store.overall(df), "boroughs": store.borough_rates(df), "dataset": store.info()}
+        if ml_mode():
+            payload = {**predictor.boroughs(request.args), "dataset": store.info(), "model": "ml"}
+        else:
+            df = store.apply_filters(request.args)
+            payload = {"overall": store.overall(df), "boroughs": store.borough_rates(df), "dataset": store.info(), "model": "historical"}
         log.info("/api/rates in %.0f ms", (time.perf_counter() - t0) * 1000)
         return jsonify(payload)
 
@@ -89,6 +104,8 @@ def create_app() -> Flask:
         t0 = time.perf_counter()
         df = store.apply_filters(request.args)
         payload = store.grid(df, borough, float(request.args.get("cell_m", 500)))
+        if ml_mode():
+            payload = predictor.grid(payload, request.args)
         log.info("/api/heatmap/%s in %.0f ms", borough, (time.perf_counter() - t0) * 1000)
         return jsonify(payload)
 
@@ -97,6 +114,15 @@ def create_app() -> Flask:
         t0 = time.perf_counter()
         df = store.apply_filters(request.args)
         payload = store.borough_stats(df, borough)
+        if ml_mode():
+            c = predictor.centroids.get(borough)
+            if c is not None:
+                sens = predictor.sensitivities(c.y, c.x, request.args)
+                london = predictor.boroughs(request.args)["overall"]
+                payload = {**payload, "model": "ml", "historical_stats": payload["stats"], "stats": sens["base"], "london": london,
+                           "by_day": sens["by_day"], "by_month": sens["by_month"], "conservation": sens["conservation"],
+                           "density": sens["density"], "app_types": sens["app_types"], "by_year": {}, "london_by_year": {},
+                           "settings": sens["settings"], "flood": {}}
         log.info("/api/borough/%s in %.0f ms", borough, (time.perf_counter() - t0) * 1000)
         return jsonify(payload)
 
@@ -111,6 +137,13 @@ def create_app() -> Flask:
         else:
             borough = None
         payload = {"lat": lat, "lon": lon, "features": feats, "borough_rate": borough, **store.point_estimate(df, lat, lon, feats)}
+        payload["model"] = "historical"
+        if ml_mode():
+            sens = predictor.sensitivities(lat, lon, request.args)
+            payload.update({"model": "ml", "model_prediction": sens["base"]["rate"], "historical": payload["estimate"],
+                            "by_day": sens["by_day"], "by_month": sens["by_month"], "sensitivities": {
+                                "conservation": sens["conservation"], "density": sens["density"], "app_types": sens["app_types"]},
+                            "settings": sens["settings"]})
         log.info("/api/point %.5f,%.5f -> %s in %.0f ms", lat, lon, feats, (time.perf_counter() - t0) * 1000)
         return jsonify(payload)
 

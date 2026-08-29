@@ -54,3 +54,22 @@ input[type=number] { width: 70px; }
 .btn-group button:hover { background: #eef1f5; }
 .btn-group button[aria-pressed=true] { background: #2b8cbe; color: #fff; }
 .btn-group button[aria-pressed=true] .rng { color: #e3eef7; }
+
+/* ML description box + examples popover */
+#ml-desc-wrap { margin-top: 8px; position: relative; }
+.desc-label { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; }
+.desc-label #desc-count { margin-left: auto; font-weight: 400; }
+#ml-description { width: 100%; margin-top: 4px; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid #c8ced6; border-radius: 6px; resize: vertical; }
+button.help { width: 18px; height: 18px; padding: 0; border-radius: 50%; font-size: 12px; font-weight: 700; line-height: 16px; }
+.popover { position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); z-index: 20; background: #fff; border: 1px solid #c8ced6; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 8px 10px; font-size: 12px; }
+.popover-title { font-weight: 600; margin-bottom: 4px; }
+.popover ul { margin: 0; padding-left: 16px; }
+.popover li { margin: 3px 0; cursor: pointer; }
+.popover li:hover { color: #2b8cbe; }
+
+/* loading indicator */
+#loading { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000; background: #1d2430; color: #fff; padding: 6px 12px; border-radius: 999px; font-size: 13px; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+#loading[hidden] { display: none; }
+.spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#sidebar.pending .stat { opacity: .55; transition: opacity .2s; }

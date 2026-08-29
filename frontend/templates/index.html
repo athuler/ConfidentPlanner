@@ -54,17 +54,48 @@
         <label>from <input type="number" name="year_min" min="2016" max="2026" step="1"></label>
         <label>to <input type="number" name="year_max" min="2016" max="2026" step="1"></label>
       </fieldset>
-<button type="button" id="reset">Reset filters</button>
+      <button type="button" id="reset">Reset filters</button>
+      <fieldset id="model-field">
+        <legend>Prediction model</legend>
+        <div class="btn-group" id="model-group">
+          <button type="button" data-value="historical" aria-pressed="true"><span class="icon">📜</span><span class="lbl">Historical</span><span class="rng">share of decided applications approved</span></button>
+          <button type="button" data-value="ml" aria-pressed="false" disabled><span class="icon">🤖</span><span class="lbl">ML model</span><span class="rng">logistic regression, trained 2022–26</span></button>
+        </div>
+        <div id="model-status" class="muted"></div>
+        <div id="ml-desc-wrap" hidden>
+          <label for="ml-description" class="desc-label">Describe your proposal
+            <button type="button" id="desc-help" class="help" aria-label="examples" title="Examples">?</button>
+            <span id="desc-count" class="muted">0 / 500</span>
+          </label>
+          <textarea id="ml-description" name="description" maxlength="500" rows="3" placeholder="e.g. Single storey rear extension and loft conversion with rear dormer"></textarea>
+          <div id="desc-examples" class="popover" hidden>
+            <div class="popover-title">Sample descriptions — click one to use it</div>
+            <ul>
+              <li>Erection of a single storey rear extension and loft conversion with rear dormer to existing dwellinghouse.</li>
+              <li>Two storey side extension and part single storey rear extension, with new roof lights.</li>
+              <li>Change of use from retail (Class E) to a two-bedroom residential flat at first floor, with new shopfront.</li>
+              <li>Demolition of existing garage and erection of a two-storey, three-bedroom detached dwelling with off-street parking.</li>
+              <li>Installation of an air source heat pump to the rear elevation and solar PV panels to the roof.</li>
+              <li>Replacement of timber sash windows with double-glazed uPVC windows to the front elevation.</li>
+              <li>Conversion of a single dwelling into 3 self-contained flats, with associated cycle and refuse storage.</li>
+              <li>Prior approval for a larger home extension: single storey rear extension projecting 6 m, 3 m high.</li>
+              <li>Felling of one sycamore tree in a conservation area and crown reduction of two lime trees.</li>
+              <li>Display of one internally illuminated fascia sign and one projecting sign.</li>
+            </ul>
+          </div>
+        </div>
+      </fieldset>
     </form>
 
     <div id="legend">
-      <div class="legend-title">Approval rate</div>
+      <div class="legend-title" id="legend-title">Approval rate</div>
       <div id="legend-scale"></div>
       <div class="muted">grey = fewer than 5 decided applications</div>
     </div>
   </aside>
   <div id="map">
     <div id="point-box" hidden></div>
+    <div id="loading" hidden><span class="spinner"></span> Updating…</div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
