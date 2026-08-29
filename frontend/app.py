@@ -92,6 +92,14 @@ def create_app() -> Flask:
         log.info("/api/heatmap/%s in %.0f ms", borough, (time.perf_counter() - t0) * 1000)
         return jsonify(payload)
 
+    @app.route("/api/borough/<borough>")
+    def borough(borough: str):
+        t0 = time.perf_counter()
+        df = store.apply_filters(request.args)
+        payload = store.borough_stats(df, borough)
+        log.info("/api/borough/%s in %.0f ms", borough, (time.perf_counter() - t0) * 1000)
+        return jsonify(payload)
+
     @app.route("/api/point")
     def point():
         t0 = time.perf_counter()

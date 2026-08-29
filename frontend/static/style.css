@@ -30,6 +30,7 @@ input[type=number] { width: 70px; }
 #point-box .big { font-size: 30px; font-weight: 700; }
 #point-box table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
 #point-box td { padding: 3px 0; border-top: 1px solid #eef0f3; vertical-align: top; }
+#point-box th { text-align: left; padding: 8px 0 2px; font-size: 12px; color: #1d2430; border-top: 1px solid #dfe3e8; }
 #point-box td:first-child { color: #5b6573; width: 46%; }
 #point-box select { width: 100%; margin-top: 2px; }
 #point-box .row { display: flex; gap: 8px; margin-top: 8px; }

@@ -167,6 +167,23 @@ class DataStore:
         log.info("grid %s: %d rows -> %d cells (>=%d apps each)", borough, len(g), len(feats), MIN_N_CELL)
         return {"type": "FeatureCollection", "features": feats, "stats": self._rate(g), "cell_m": cell_m}
 
+    def borough_stats(self, df: pd.DataFrame, borough: str) -> dict:
+        """Breakdowns for the borough panel (filters already applied)."""
+        g = df[df["Borough"] == borough]
+        cons, flood = g["conservation"].fillna(False), g["flood"].fillna(False)
+        types = g.groupby("app_type")["approved"].agg(["count", "mean"]).sort_values("count", ascending=False).head(8)
+        return {
+            "name": borough,
+            "stats": self._rate(g),
+            "london": self._rate(df),
+            "by_day": {d: self._rate(g[g["Day of the Week"] == d]) for d in DAYS},
+            "by_month": {m: self._rate(g[g["month"] == m]) for m in range(1, 13)},
+            "conservation": {"inside": self._rate(g[cons]), "outside": self._rate(g[~cons])},
+            "flood": {"in_zone": self._rate(g[flood]), "not_in_zone": self._rate(g[~flood])},
+            "density": {b: self._rate(g[g["density_band"] == b]) for b, _, _ in DENSITY_BANDS},
+            "app_types": [{"value": str(k), "n": int(r["count"]), "rate": float(r["mean"])} for k, r in types.iterrows()],
+        }
+
     def options(self) -> dict:
         df = self.df
         types = df["app_type"].value_counts().head(12)

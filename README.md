@@ -77,8 +77,8 @@ python run.py            # http://localhost:5000  (--port to change)
 ```
 
 One page: a London map with each borough coloured by the share of decided applications that were approved.
-Click a borough to zoom in and see a ~500 m grid heatmap of approval rates; click anywhere inside it to assess
-that point — a box shows the likelihood (nearest decided applications within 250 m–2 km), the rate among
+Click a borough to zoom in and see a ~500 m grid heatmap of approval rates; the overlay shows the borough's stats (by conservation/flood/density/day/month/application type);
+click anywhere inside it to assess that point — a box shows the likelihood (nearest decided applications within 250 m–2 km), the rate among
 neighbours with the same conservation/flood status, the borough average, and the point's features
 (conservation area, flood zone, ward population density, distance to park), with day-of-week and month toggles.
 Sidebar toggles (flood zone, conservation area, month, day of the week, application type, year range) re-query

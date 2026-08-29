@@ -67,7 +67,8 @@ async function loadBoroughs() {
       layer.bindTooltip(tooltipHtml(f.properties.name, rates.boroughs[f.properties.name]), { sticky: true, className: "rate-tip" });
       layer.on("click", e => {
         closeTooltips();
-        if (currentBorough) { L.DomEvent.stop(e); assessPoint(e.latlng); }
+        L.DomEvent.stop(e);  // never let the same click reach the map handler
+        if (currentBorough) assessPoint(e.latlng);
         else openBorough(f.properties.name, layer);
       });
       layer.on("mouseover", () => { if (!currentBorough) layer.setStyle({ weight: 3 }); });
@@ -127,7 +128,7 @@ function applyRates(rates) {
 async function refreshRates() {
   const rates = await getJSON("/api/rates?" + filterParams());
   applyRates(rates);
-  if (currentBorough) await drawGrid();
+  if (currentBorough) { await drawGrid(); if (boxMode === "borough") await showBoroughBox(); }
 }
 
 async function drawGrid() {
@@ -148,12 +149,15 @@ async function openBorough(name, layer) {
   map.fitBounds(layer.getBounds(), { paddingTopLeft: [20, 20], paddingBottomRight: [360, 20] }); // keep the borough clear of the point box
   boroughLayer.eachLayer(l => l.setStyle(styleFor(l.feature, lastBoroughRates)));
   setBoroughInteractivity(true);
-  await drawGrid();
+  clearPointMarker();
+  await Promise.all([drawGrid(), showBoroughBox()]);
 }
 
 function backToLondon() {
   closeTooltips();
   currentBorough = null;
+  clearPointMarker();
+  document.getElementById("point-box").hidden = true;
   if (gridLayer) { map.removeLayer(gridLayer); gridLayer = null; }
   document.getElementById("back").hidden = true;
   document.getElementById("view-title").textContent = "All boroughs";
@@ -232,7 +236,50 @@ async function assessPoint(latlng) {
     const r = await getJSON("/api/point?" + pointParams(latlng));
     renderPoint(r, prevDay, prevMonth);
   } catch (e) { box.innerHTML = `<h2>Point <button class="close">×</button></h2><div class="muted">${e.message}</div>`; }
-  box.querySelector(".close").onclick = () => { box.hidden = true; if (pointMarker) { map.removeLayer(pointMarker); pointMarker = null; } };
+  boxMode = "point";
+  box.querySelector(".close").onclick = closePointBox;
+}
+
+let boxMode = null; // "borough" | "point" | null
+
+function clearPointMarker() {
+  pointLatLng = null;
+  if (pointMarker) { map.removeLayer(pointMarker); pointMarker = null; }
+}
+
+function closePointBox() {
+  clearPointMarker();
+  if (currentBorough) showBoroughBox(); else { document.getElementById("point-box").hidden = true; boxMode = null; }
+}
+
+function rateRow(label, r) {
+  return `<tr><td>${label}</td><td>${r && r.n ? `${pct(r.rate)} <small class="muted">(${r.n.toLocaleString()})</small>` : "<small class='muted'>–</small>"}</td></tr>`;
+}
+
+async function showBoroughBox() {
+  if (!currentBorough) return;
+  const name = currentBorough;
+  const box = document.getElementById("point-box");
+  box.hidden = false; boxMode = "borough";
+  try {
+    const r = await getJSON(`/api/borough/${encodeURIComponent(name)}?` + filterParams());
+    if (currentBorough !== name || boxMode !== "borough") return;
+    const s = r.stats, L_ = r.london;
+    box.innerHTML = `
+      <h2>${name} <button class="close" title="close">×</button></h2>
+      <div class="big">${pct(s.rate)}</div>
+      <div class="muted">${s.approved.toLocaleString()} approved of ${s.n.toLocaleString()} decided (current filters) · London ${pct(L_.rate)}</div>
+      <div class="muted" style="margin:6px 0 4px"><b>Click anywhere in the borough</b> for a point assessment.</div>
+      <table>
+        <tr><th colspan="2">Conservation area</th></tr>${rateRow("inside", r.conservation.inside)}${rateRow("outside", r.conservation.outside)}
+        <tr><th colspan="2">Flood risk</th></tr>${rateRow("in zone", r.flood.in_zone)}${rateRow("not in zone", r.flood.not_in_zone)}
+        <tr><th colspan="2">Population density (ward)</th></tr>${["low", "medium", "high"].map(b => rateRow(b, r.density[b])).join("")}
+        <tr><th colspan="2">Day of the week</th></tr>${DAYS.map(d => rateRow(d.slice(0, 3), r.by_day[d])).join("")}
+        <tr><th colspan="2">Month</th></tr>${MONTHS.map((m, i) => rateRow(m, r.by_month[i + 1])).join("")}
+        <tr><th colspan="2">Application type</th></tr>${r.app_types.map(t => rateRow(t.value, t)).join("")}
+      </table>`;
+    box.querySelector(".close").onclick = () => { box.hidden = true; boxMode = null; };
+  } catch (e) { box.innerHTML = `<h2>${name} <button class="close">×</button></h2><div class="muted">${e.message}</div>`; box.querySelector(".close").onclick = () => { box.hidden = true; boxMode = null; }; }
 }
 
 function fmt(x, d = 0) { return x === null || x === undefined ? "n/a" : Number(x).toLocaleString(undefined, { maximumFractionDigits: d }); }
@@ -244,7 +291,7 @@ function renderPoint(r, day, month) {
   const byMonth = month && r.by_month[month] ? r.by_month[month] : null;
   const box = document.getElementById("point-box");
   box.innerHTML = `
-    <h2>Point in ${f.borough || "outside London"} <button class="close" title="close">×</button></h2>
+    <h2>Point in ${f.borough || "outside London"} <span><button class="close" id="to-borough" title="borough stats" style="font-size:12px">◀ borough</button> <button class="close" title="close">×</button></span></h2>
     <div class="big">${pct(est.rate)}</div>
     <div class="muted">${est.approved} of ${est.n} decided applications within ${fmt(est.radius_m)} m (current filters)</div>
     <div class="muted">${pct(r.similar.rate)} among the ${r.similar.n} of those with the same conservation/flood status
@@ -266,13 +313,13 @@ function renderPoint(r, day, month) {
       <tr><td>Nearest application</td><td>${fmt(nf.nearest_app_m)} m away</td></tr>
     </table>`;
   box.querySelectorAll("select").forEach(sel => sel.onchange = () => assessPoint(pointLatLng));
+  const tb = box.querySelector("#to-borough"); if (tb) tb.onclick = closePointBox;
 }
-document.getElementById("filters").addEventListener("change", () => { if (pointLatLng && !document.getElementById("point-box").hidden) setTimeout(() => assessPoint(pointLatLng), 200); });
+document.getElementById("filters").addEventListener("change", () => { if (boxMode === "point" && pointLatLng) setTimeout(() => assessPoint(pointLatLng), 200); });
 
 /* ESC: close the point box first if open, otherwise leave the selected borough */
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
-  const box = document.getElementById("point-box");
-  if (!box.hidden) { box.hidden = true; if (pointMarker) { map.removeLayer(pointMarker); pointMarker = null; } return; }
+  if (boxMode === "point") { closePointBox(); return; }
   if (currentBorough) backToLondon();
 });
