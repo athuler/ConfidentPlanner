@@ -292,7 +292,15 @@ function buildFilters(opts) {
   renderLegend();
 
   f.addEventListener("change", () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refreshRates, 150); });
-  document.getElementById("reset").addEventListener("click", () => { f.reset(); f.querySelectorAll("#density button, #app-types button").forEach(b => b.setAttribute("aria-pressed", "false")); refreshRates(); });
+  document.getElementById("reset").addEventListener("click", () => {
+    // Reset only the filters: keep the chosen model and the ML description (they are not filters).
+    f.querySelectorAll("input[type=checkbox]").forEach(c => { c.checked = false; });
+    f.querySelectorAll("input[type=radio][value=any]").forEach(r => { r.checked = true; });
+    f.year_min.value = ""; f.year_max.value = "";
+    f.querySelectorAll("#density button, #app-types button").forEach(b => b.setAttribute("aria-pressed", "false"));
+    closeTooltips();
+    f.dispatchEvent(new Event("change"));  // same path as any other filter edit: rates, grid, borough box and point box all refresh
+  });
   document.getElementById("back").addEventListener("click", backToLondon);
   const ta = document.getElementById("ml-description"), cnt = document.getElementById("desc-count"), ex = document.getElementById("desc-examples");
   let descTimer = null;
