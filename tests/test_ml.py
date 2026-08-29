@@ -45,6 +45,41 @@ def test_wrapper_matches_predict_py():
         assert abs(got - expected) < 0.002, (c, got, expected)
 
 
+def test_wrapper_matches_predict_py_all_flags():
+    """Every CLI flag of Model/predict.py round-trips through the wrapper identically."""
+    cases = [
+        dict(description="Erection of 4 flats with parking", borough="Hackney", ward="Brownswood Ward", application_type="All Other",
+             application_type_full="Full planning permission", month=3, day_of_week="Wednesday", lat=51.5676, lon=-0.0964,
+             site_area=850, gia_gained=420, population_density=12000, population_density_oa=15000, distance_to_park=120,
+             conservation_area="false", decision_process="Committee", cil_liability="true"),
+        dict(description="Loft conversion", borough="Bromley", application_type="Prior Approval",
+             application_type_full="Prior Approval: Larger Home Extension", month=11, day_of_week="Friday",
+             decision_process="Delegated", cil_liability="false", conservation_area="true"),
+    ]
+    keymap = {"borough": "Borough", "ward": "ward_name", "application_type": "Application type", "application_type_full": "dh_application_type_full",
+              "month": "Month", "day_of_week": "Day of the Week", "lat": "Lat", "lon": "Lon", "site_area": "dh_site_area",
+              "gia_gained": "dh_total_gia_gained", "population_density": "Population Density", "population_density_oa": "Population Density (OA)",
+              "distance_to_park": "Distance to Park (m)", "conservation_area": "Conservation Area?", "decision_process": "dh_decision_process",
+              "cil_liability": "dh_cil_liability"}
+    for c in cases:
+        expected = cli(**c)
+        got = MODEL.predict_one({keymap[k]: v for k, v in c.items() if k in keymap}, description=c["description"])
+        assert abs(got - expected) < 0.002, (c, got, expected)
+
+
+def test_vocab_covers_app_values():
+    import json
+    from frontend.predictor import FULL_TYPE, TYPE_DEFAULTS
+    oh = MODEL.bundle["prep"].named_transformers_["cat"].named_steps["onehot"]
+    vocab = dict(zip(MODEL.categorical, (set(c) for c in oh.categories_)))
+    boroughs = [f["properties"]["LAD23NM"] for f in json.load(open(ROOT / "Data" / "reference" / "london_boroughs.geojson"))["features"]]
+    assert all(b in vocab["Borough"] for b in boroughs), [b for b in boroughs if b not in vocab["Borough"]]
+    assert all(v in vocab["dh_application_type_full"] for v in FULL_TYPE.values())
+    assert TYPE_DEFAULTS["dh_decision_process"] in vocab["dh_decision_process"]
+    assert TYPE_DEFAULTS["dh_cil_liability"] in vocab["dh_cil_liability"]
+    assert {"True", "False"} <= vocab["Conservation Area?"] and {str(m) for m in range(1, 13)} <= vocab["Month"]
+
+
 def test_real_rows_roughly_calibrated():
     files = sorted((ROOT / "Data" / "processed").glob("applications_enriched_2025.parquet"))
     if not files:

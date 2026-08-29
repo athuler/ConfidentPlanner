@@ -89,7 +89,12 @@ class Predictor:
         months = [m for m in (args.get("months") or "").split(",") if m.strip().isdigit()]
         days = [d for d in (args.get("days") or "").split(",") if d]
         desc = (args.get("description") or "").strip()[:MAX_DESCRIPTION]
+        bands = [b for b in (args.get("density") or "").split(",") if b in DENSITY_TYPICAL]
+        cons = {"yes": True, "no": False}.get(args.get("conservation"))
         return {
+            "conservation_override": cons,
+            "density_override": DENSITY_TYPICAL[bands[0]] if len(bands) == 1 else None,
+            "density_band": bands[0] if len(bands) == 1 else None,
             "Application type": types[0] if len(types) == 1 else DEFAULT_TYPE,
             "type_defaulted": len(types) != 1,
             "Month": int(months[0]) if len(months) == 1 else today.month,
@@ -107,6 +112,11 @@ class Predictor:
             row = {"Lat": la, "Lon": lo, **{k: v for k, v in places[i].items() if k != "conservation_area_name"},
                    "Application type": st["Application type"], "Month": st["Month"], "Day of the Week": st["Day of the Week"],
                    **TYPE_DEFAULTS}
+            if st["conservation_override"] is not None:  # sidebar inside/outside overrides the polygon lookup
+                row["Conservation Area?"] = st["conservation_override"]
+            if st["density_override"] is not None:  # a single selected density band overrides the location's density
+                row["Population Density"] = st["density_override"]
+                row["Population Density (OA)"] = st["density_override"]
             if overrides and overrides[i]:
                 row.update(overrides[i])
             row["dh_application_type_full"] = FULL_TYPE.get(row["Application type"])

@@ -89,6 +89,27 @@ function renderLegend() {
   SCALE.forEach((c, i) => scale.insertAdjacentHTML("beforeend", `<div style="background:${c}">${labels[i]}</div>`));
 }
 
+// In ML mode, grey out controls the model has no input for and explain single-value semantics.
+const ML_HINTS = {
+  "app-types": "pick exactly one type (else Householder is assumed)",
+  "months": "the model takes one month: pick exactly one (else this month)",
+  "days": "the model takes one weekday: pick exactly one (else today)",
+  "density": "overrides the location's density when one band is picked (weak signal in this model)",
+};
+const ML_UNUSED = { "flood": "not an input of the ML model", "years": "not an input of the ML model" };
+function markFieldsForModel() {
+  const ml = isML();
+  document.querySelectorAll("#filters fieldset").forEach(fs => {
+    const id = fs.id || (fs.querySelector("input[name=flood]") ? "flood" : fs.querySelector("input[name=conservation]") ? "conservation" : "");
+    let hint = fs.querySelector(".ml-hint");
+    if (!hint) { hint = document.createElement("div"); hint.className = "ml-hint muted"; fs.appendChild(hint); }
+    fs.classList.toggle("not-used", ml && id in ML_UNUSED);
+    fs.title = ml && id in ML_UNUSED ? ML_UNUSED[id] : "";
+    hint.textContent = ml ? (ML_UNUSED[id] || ML_HINTS[id] || "") : "";
+    hint.hidden = !hint.textContent;
+  });
+}
+
 function updateModelStatus(ml) {
   const st = document.getElementById("model-status"), btn = document.querySelector("#model-group button[data-value=ml]");
   if (!ml || ml.state === "off") { st.textContent = "ML model: not loaded"; btn.disabled = true; return; }
@@ -96,6 +117,7 @@ function updateModelStatus(ml) {
   btn.disabled = false;
   st.textContent = isML() ? "Scores a hypothetical new application at each location with your settings." : "";
   document.getElementById("ml-desc-wrap").hidden = !isML();
+  markFieldsForModel();
 }
 
 function showDataset(ds) {
@@ -409,7 +431,7 @@ function renderPoint(r, day, month) {
     <h2>Point in ${f.borough || "outside London"} <span><button class="close" id="to-borough" title="borough stats" style="font-size:12px">◀ borough</button> <button class="close" title="close">×</button></span></h2>
     ${r.model === "ml" ? `
     <div class="big">${r.model_prediction !== null && r.model_prediction !== undefined ? pct(r.model_prediction) : "n/a"}</div>
-    <div class="muted"><b>ML prediction for a new application here</b> — ${r.settings.description ? "with your description" : "<b>no description yet: add one for a better estimate</b>"}; type ${r.settings["Application type"]}${r.settings.type_defaulted ? " (default — pick one in the sidebar)" : ""}, ${MONTHS[r.settings.Month - 1]}, ${r.settings["Day of the Week"]}</div>
+    <div class="muted"><b>ML prediction for a new application here</b> — ${r.settings.description ? "with your description" : "<b>no description yet: add one for a better estimate</b>"}; type ${r.settings["Application type"]}${r.settings.type_defaulted ? " (default — pick one in the sidebar)" : ""}, ${MONTHS[r.settings.Month - 1]}, ${r.settings["Day of the Week"]}${r.settings.density_band ? `, density set to ${r.settings.density_band}` : ""}</div>
     <div class="muted">historical: ${r.historical ? `${pct(r.historical.rate)} (${r.historical.approved} of ${r.historical.n} decided within ${fmt(r.historical.radius_m)} m)` : "n/a"}</div>
     <div class="muted">if in a conservation area ${pct(r.sensitivities.conservation.inside.rate)} · outside ${pct(r.sensitivities.conservation.outside.rate)} · ${r.sensitivities.app_types.map(t => `${t.value} ${pct(t.rate)}`).join(" · ")}</div>` : `
     <div class="big">${pct(est.rate)}</div>

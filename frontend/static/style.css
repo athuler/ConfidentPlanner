@@ -73,3 +73,7 @@ button.help { width: 18px; height: 18px; padding: 0; border-radius: 50%; font-si
 .spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 #sidebar.pending .stat { opacity: .55; transition: opacity .2s; }
+
+fieldset.not-used { opacity: .45; }
+.ml-hint { font-size: 11px; margin-top: 4px; }
+.ml-hint[hidden] { display: none; }

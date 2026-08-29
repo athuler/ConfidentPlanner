@@ -102,6 +102,17 @@ permission", decision process "Delegated", no CIL liability) — leaving them bl
 and depresses predictions by ~20 pp. When no single application type is selected, Householder is assumed.
 Pass `model=ml&description=…` on any API call. Tests: `python -m pytest tests -q`.
 
+What the ML model actually reacts to (measured at a fixed point, Householder with a description):
+
+| Input | Where the app gets it | Effect |
+|---|---|---|
+| Application type (+ full type) | sidebar, single selection | large — Householder ≈ 90 %, All Other ≈ 84 %, Prior Approval ≈ 45 % |
+| Description text | sidebar box | large — several pp between texts, −3 pp when empty |
+| Borough | polygon lookup | medium — up to ±7 pp between boroughs |
+| Ward, month, weekday, conservation area | nearest application / sidebar / polygon | small — ≤ 1 pp each |
+| Population density, distance to park, lat/lon | nearest application / sidebar band | negligible (< 0.5 pp) |
+| Flood zone, year range | — | not model inputs; greyed out in ML mode |
+
 API: `/api/rates`, `/api/heatmap/<borough>`, `/api/point?lat=&lon=`, `/api/options`, `/api/boroughs.geojson` —
 all accept the filter query params `flood=any|yes|no`, `conservation=any|yes|no`, `months=1,2`, `days=Monday,…`,
 `app_types=…`, `density=low,medium,high`, `year_min`, `year_max`.
