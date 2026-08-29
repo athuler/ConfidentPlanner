@@ -16,7 +16,7 @@ fieldset { border: 1px solid #dfe3e8; border-radius: 8px; padding: 8px 10px; mar
 legend { font-weight: 600; padding: 0 4px; }
 fieldset label { display: inline-block; margin: 2px 8px 2px 0; white-space: nowrap; }
 #months label, #days label { min-width: 62px; }
-#app-types label { display: block; white-space: normal; }
+.btn-group button .rng { white-space: normal; text-align: center; }
 #app-types small { color: #6b7684; }
 input[type=number] { width: 70px; }
 #legend { margin-top: 12px; padding: 10px 12px; background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; }

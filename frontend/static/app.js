@@ -28,7 +28,7 @@ function filterParams() {
   p.set("conservation", f.conservation.value);
   const months = [...f.querySelectorAll("#months input:checked")].map(i => i.value);
   const days = [...f.querySelectorAll("#days input:checked")].map(i => i.value);
-  const types = [...f.querySelectorAll("#app-types input:checked")].map(i => i.value);
+  const types = [...f.querySelectorAll("#app-types button[aria-pressed=true]")].map(b => b.dataset.value);
   const density = [...f.querySelectorAll("#density button[aria-pressed=true]")].map(b => b.dataset.value);
   if (density.length) p.set("density", density.join(","));
   if (months.length) p.set("months", months.join(","));
@@ -192,7 +192,19 @@ function buildFilters(opts) {
   const days = document.getElementById("days");
   opts.days.forEach(d => days.insertAdjacentHTML("beforeend", `<label><input type="checkbox" name="days" value="${d}"> ${d.slice(0, 3)}</label>`));
   const types = document.getElementById("app-types");
-  opts.app_types.forEach(t => types.insertAdjacentHTML("beforeend", `<label><input type="checkbox" name="app_types" value="${t.value.replace(/"/g, "&quot;")}"> ${t.value} <small>(${t.n.toLocaleString()})</small></label>`));
+  const TYPE_ICONS = { "Householder": "🏠", "Prior Approval": "📋", "All Other": "🏗️" };
+  const TYPE_HINT = { "Householder": "home extensions & alterations", "Prior Approval": "permitted development checks", "All Other": "full, listed, trees, adverts…" };
+  const tgroup = document.createElement("div"); tgroup.className = "btn-group";
+  const TYPE_ORDER = ["Householder", "Prior Approval", "All Other"];
+  [...opts.app_types].sort((a, b) => (TYPE_ORDER.indexOf(a.value) + 1 || 99) - (TYPE_ORDER.indexOf(b.value) + 1 || 99)).forEach(t => {
+    tgroup.insertAdjacentHTML("beforeend", `<button type="button" data-value="${t.value.replace(/"/g, "&quot;")}" aria-pressed="false" title="${t.n.toLocaleString()} decided applications">
+        <span class="icon">${TYPE_ICONS[t.value] || "📄"}</span><span class="lbl">${t.value}</span><span class="rng">${TYPE_HINT[t.value] || t.n.toLocaleString() + " apps"}</span></button>`);
+  });
+  types.appendChild(tgroup);
+  tgroup.querySelectorAll("button").forEach(btn => btn.addEventListener("click", () => {
+    btn.setAttribute("aria-pressed", btn.getAttribute("aria-pressed") === "true" ? "false" : "true");
+    f.dispatchEvent(new Event("change"));
+  }));
   const f = document.getElementById("filters");
   if (opts.year_min) { f.year_min.placeholder = opts.year_min; f.year_min.min = opts.year_min; f.year_max.min = opts.year_min; }
   if (opts.year_max) { f.year_max.placeholder = opts.year_max; f.year_min.max = opts.year_max; f.year_max.max = opts.year_max; }
@@ -201,7 +213,7 @@ function buildFilters(opts) {
   SCALE.forEach((c, i) => scale.insertAdjacentHTML("beforeend", `<div style="background:${c}">${labels[i]}</div>`));
 
   f.addEventListener("change", () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refreshRates, 150); });
-  document.getElementById("reset").addEventListener("click", () => { f.reset(); f.querySelectorAll("#density button").forEach(b => b.setAttribute("aria-pressed", "false")); refreshRates(); });
+  document.getElementById("reset").addEventListener("click", () => { f.reset(); f.querySelectorAll("#density button, #app-types button").forEach(b => b.setAttribute("aria-pressed", "false")); refreshRates(); });
   document.getElementById("back").addEventListener("click", backToLondon);
 }
 

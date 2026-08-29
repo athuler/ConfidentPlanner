@@ -25,6 +25,12 @@
     </div>
 
     <form id="filters">
+      <fieldset id="app-types">
+        <legend>Application type</legend>
+      </fieldset>
+      <fieldset id="density">
+        <legend>Population density (ward)</legend>
+      </fieldset>
       <fieldset>
         <legend>Flood risk zone</legend>
         <label><input type="radio" name="flood" value="any" checked> any</label>
@@ -37,24 +43,18 @@
         <label><input type="radio" name="conservation" value="yes"> inside</label>
         <label><input type="radio" name="conservation" value="no"> outside</label>
       </fieldset>
-      <fieldset id="density">
-        <legend>Population density (ward)</legend>
-      </fieldset>
       <fieldset id="months">
         <legend>Month validated</legend>
       </fieldset>
       <fieldset id="days">
         <legend>Day of the week validated</legend>
       </fieldset>
-      <fieldset id="app-types">
-        <legend>Application type</legend>
-      </fieldset>
       <fieldset id="years">
         <legend>Years</legend>
         <label>from <input type="number" name="year_min" min="2016" max="2026" step="1"></label>
         <label>to <input type="number" name="year_max" min="2016" max="2026" step="1"></label>
       </fieldset>
-      <button type="button" id="reset">Reset filters</button>
+<button type="button" id="reset">Reset filters</button>
     </form>
 
     <div id="legend">
