@@ -7,3 +7,4 @@ Data/processed/
 Data/datahub/
 Data/reference/
 Data/*.geojson
+Data/*.csv.gz

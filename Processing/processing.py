@@ -212,7 +212,16 @@ class JsonCache:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.data))
-        tmp.replace(self.path)
+        for attempt in range(10):
+            try:
+                tmp.replace(self.path)
+                return
+            except PermissionError:
+                if attempt == 9:
+                    raise
+                # OneDrive/antivirus can briefly hold the destination between
+                # its creation and the atomic replace operation.
+                time.sleep(0.25 * (attempt + 1))
 
     def clear(self) -> None:
         self.data = {}
@@ -456,58 +465,79 @@ def load_datahub(years, out_dir: Path, columns: str = "default", refresh: bool =
 # --------------------------------------------------------------------------- #
 # 1b. Source: export CSVs in Data/
 # --------------------------------------------------------------------------- #
-DESCRIPTION_INDEX = 7
-
-
 def read_csv_tolerant(path: Path) -> pd.DataFrame:
     """Read an export CSV, repairing rows with unescaped quotes or a truncated last record."""
-    lines = path.read_text(encoding="utf-8-sig").splitlines(keepends=True)
+    try:
+        # The C parser handles quoted multiline descriptions and reads compressed
+        # exports without materialising the decompressed file in memory first.
+        df = pd.read_csv(path, dtype=str, compression="infer")
+        log.info("%s: %d rows", path.name, len(df))
+        return df
+    except (pd.errors.ParserError, UnicodeDecodeError) as exc:
+        log.warning("Fast CSV read failed for %s (%s); using tolerant reader", path.name, exc)
+
     consumed: list[str] = []
+    opener = gzip.open if path.name.lower().endswith(".gz") else open
+    with opener(path, "rt", encoding="utf-8-sig") as fh:
+        def tracked():
+            for line in fh:
+                consumed.append(line)
+                yield line
 
-    def tracked():
-        for line in lines:
-            consumed.append(line)
-            yield line
-
-    reader = csv.reader(tracked())
-    header = next(reader)
-    n = len(header)
-    tail = n - DESCRIPTION_INDEX - 1
-    rows, repaired, padded = [], 0, 0
-    consumed.clear()
-    for row in reader:
-        raw = "".join(consumed).rstrip("\r\n")
+        reader = csv.reader(tracked())
+        header = next(reader)
+        n = len(header)
+        description_index = next(
+            (i for i, col in enumerate(header) if col.lower() == "description"),
+            min(7, n - 1),
+        )
+        tail = n - description_index - 1
+        rows, repaired, padded = [], 0, 0
         consumed.clear()
-        if len(row) == n:
+        for row in reader:
+            raw = "".join(consumed).rstrip("\r\n")
+            consumed.clear()
+            if len(row) == n:
+                rows.append(row)
+                continue
+            parts = raw.split(",")
+            if len(parts) >= n:
+                desc = ",".join(parts[description_index : len(parts) - tail]).strip()
+                if desc.startswith('"') and desc.endswith('"'):
+                    desc = desc[1:-1]
+                row = parts[:description_index] + [desc.replace('""', '"')] + parts[-tail:]
+                repaired += 1
+                log.warning("%s line %d: repaired row with unescaped quotes (%s)", path.name, reader.line_num, row[0])
+            else:
+                padded += 1
+                log.warning("%s line %d: short/truncated row padded (%s)", path.name, reader.line_num, row[0] if row else "?")
+                row = (row + [""] * n)[:n]
             rows.append(row)
-            continue
-        parts = raw.split(",")
-        if len(parts) >= n:
-            desc = ",".join(parts[DESCRIPTION_INDEX : len(parts) - tail]).strip()
-            if desc.startswith('"') and desc.endswith('"'):
-                desc = desc[1:-1]
-            row = parts[:DESCRIPTION_INDEX] + [desc.replace('""', '"')] + parts[-tail:]
-            repaired += 1
-            log.warning("%s line %d: repaired row with unescaped quotes (%s)", path.name, reader.line_num, row[0])
-        else:
-            padded += 1
-            log.warning("%s line %d: short/truncated row padded (%s)", path.name, reader.line_num, row[0] if row else "?")
-            row = (row + [""] * n)[:n]
-        rows.append(row)
     log.info("%s: %d rows (%d repaired, %d padded)", path.name, len(rows), repaired, padded)
     return pd.DataFrame(rows, columns=header, dtype=str)
 
 
 def load_csvs(data_dir: Path) -> pd.DataFrame:
-    files = sorted(p for p in data_dir.glob("*.csv") if p.is_file())
+    files = sorted({p for pattern in ("*.csv", "*.csv.gz") for p in data_dir.glob(pattern) if p.is_file()})
     if not files:
-        raise SystemExit(f"No CSV files found in {data_dir}")
+        raise SystemExit(f"No CSV or CSV.GZ files found in {data_dir}")
     frames = []
     for path in files:
         df = read_csv_tolerant(path)
         df["source_file"] = path.name
         frames.append(df)
     df = pd.concat(frames, ignore_index=True)
+
+    # Bulk Datahub CSV exports use snake_case field names, whereas the legacy
+    # exports use display names. Normalise both to the same downstream schema.
+    if "lpa_app_no" in df.columns:
+        rename = {c: DATAHUB_RENAMES.get(c, f"dh_{c}") for c in df.columns if c != "source_file"}
+        rename["application_id"] = "dh_id"
+        df = df.rename(columns=rename)
+        for col in ("dh_centroid_lat", "dh_centroid_lon"):
+            if col in df:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        log.info("Normalised bulk Datahub CSV schema (%d columns)", df.shape[1])
     before = len(df)
     df = df.drop_duplicates(subset=["LPA Number", "Borough"], keep="last").reset_index(drop=True)
     log.info("CSV frame: %d rows from %d files (%d duplicates dropped)", len(df), len(files), before - len(df))
@@ -590,7 +620,7 @@ def normalise_borough(value) -> str | None:
 def add_dates(df: pd.DataFrame) -> pd.DataFrame:
     for col in ("Valid date", "Decision date", "Decision target date", "Appeal decision date"):
         if col in df:
-            parsed = pd.to_datetime(df[col], dayfirst=True, format="%d/%m/%Y", errors="coerce")
+            parsed = pd.to_datetime(df[col], dayfirst=True, format="mixed", errors="coerce")
             bad = df[col].notna() & parsed.isna()
             if bad.any():
                 log.warning("%s: %d unparseable values (e.g. %s)", col, int(bad.sum()), df.loc[bad, col].iloc[0])
@@ -1014,6 +1044,37 @@ def parse_years(spec: str) -> list[int]:
     return sorted(years)
 
 
+# Columns that must survive pruning even if mostly empty - dropping them would
+# break the model target, the description embeddings or the geocoding.
+ALWAYS_KEEP = ["Approved?", "description", "Description", "dh_description",
+               "Lat", "Lon", "Borough", "borough", "Valid date", "valid_date",
+               "valid_year", "application_id", "dh_id", "LPA Number"]
+
+
+def drop_sparse_columns(df: pd.DataFrame, max_null_frac: float) -> pd.DataFrame:
+    """
+    Drop columns whose values are mostly missing.
+
+    "Missing" = NaN/None OR, for text/object columns, an empty/whitespace
+    string - the enriched CSV is full of ""-only columns that isna() alone
+    would not catch. A column is dropped when its missing fraction exceeds
+    `max_null_frac`; EVERYTHING in ALWAYS_KEEP survives regardless.
+    """
+    if max_null_frac >= 1.0:
+        return df
+    missing = df.isna()
+    obj_cols = df.select_dtypes(include=["object", "string"]).columns
+    for col in obj_cols:
+        missing[col] |= df[col].astype("string").str.strip().eq("")
+    null_frac = missing.mean()
+    drop = [c for c in df.columns if null_frac[c] > max_null_frac and c not in ALWAYS_KEEP]
+    if drop:
+        log.info("dropping %d mostly-empty columns (>%.0f%% missing): %s",
+                 len(drop), max_null_frac * 100, ", ".join(f"{c} ({null_frac[c]:.0%})" for c in drop))
+        df = df.drop(columns=drop)
+    return df
+
+
 def summarise(df: pd.DataFrame, caches: dict[str, JsonCache], rows_in: int, show_sample: int) -> None:
     lines = ["", "=== Processing summary ===", f"rows in: {rows_in}   rows out: {len(df)}   columns: {df.shape[1]}"]
     if "Lat" in df:
@@ -1047,19 +1108,21 @@ def main(argv=None) -> int:
     ap.add_argument("--years", default=str(datetime.now().year), help="Datahub valid_date years, e.g. 2016-2026, 2024, 2019,2021 (default: current year only)")
     ap.add_argument("--columns", default="default", help="Datahub column set: default | full | slim | comma list")
     ap.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
-    ap.add_argument("--out", type=Path, default=None, help="default: <data-dir>/processed/applications_enriched.csv")
+    ap.add_argument("--out", type=Path, default=None, help="default: <data-dir>/processed/data.csv")
     ap.add_argument("--conservation-geojson", type=Path, default=None)
     ap.add_argument("--limit", type=int, default=None, help="keep only the first N rows (dev loop)")
     ap.add_argument("--lpa-numbers", default=None, help="comma-separated LPA Numbers to keep (dev loop)")
     ap.add_argument("--steps", default=",".join(STEPS), help=f"comma list of steps to run; default {','.join(STEPS)}")
     ap.add_argument("--skip-parks", action="store_true")
+    ap.add_argument("--max-null-frac", type=float, default=0.6,
+                    help="drop columns with more than this fraction of values missing/empty (1.0 = keep everything)")
     ap.add_argument("--show-sample", type=int, default=0, help="print N enriched rows at the end")
     ap.add_argument("--refresh-cache", nargs="?", const="all", choices=["all", "datahub", "postcodes", "parks", "flood"])
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
 
     data_dir: Path = args.data_dir
-    out: Path = args.out or data_dir / "processed" / "applications_enriched.csv"
+    out: Path = args.out or data_dir / "processed" / "data.csv"
     cache_dir, reference_dir, datahub_dir = data_dir / "cache", data_dir / "reference", data_dir / "datahub"
     setup_logging(out.parent / "processing.log", args.verbose)
     log.info("args: %s", vars(args))
@@ -1086,7 +1149,10 @@ def main(argv=None) -> int:
             df = load_datahub(parse_years(args.years), datahub_dir, columns, refresh("datahub"), dh_session)
         else:
             df = load_csvs(data_dir)
-            df = enrich_csv_from_datahub(df, caches["datahub_ids"], dh_session)
+            if "dh_id" in df.columns:
+                log.info("Bulk CSV already contains Datahub fields; skipping Datahub ID enrichment")
+            else:
+                df = enrich_csv_from_datahub(df, caches["datahub_ids"], dh_session)
     rows_in = len(df)
     if args.lpa_numbers:
         keep = {s.strip() for s in args.lpa_numbers.split(",")}
@@ -1120,6 +1186,9 @@ def main(argv=None) -> int:
             df = add_distance_to_park(df, caches["parks"], session)
     elif "Lat" in df:
         df["Distance to Park (m)"] = pd.array([None] * len(df), dtype="Float64")
+
+    with timed("prune"):
+        df = drop_sparse_columns(df, args.max_null_frac)
 
     with timed("write"):
         out.parent.mkdir(parents=True, exist_ok=True)
