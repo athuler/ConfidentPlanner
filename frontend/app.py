@@ -32,12 +32,29 @@ def load_boroughs() -> dict:
     return data
 
 
+def london_mask(boroughs: dict) -> dict:
+    """World-ish rectangle minus the union of the boroughs: drawn white on top of the tiles to crop to London."""
+    from shapely.geometry import box, mapping, shape
+    from shapely.ops import unary_union
+
+    union = unary_union([shape(f["geometry"]).buffer(0) for f in boroughs["features"]])
+    union = union.buffer(0.002).buffer(-0.002).simplify(0.0002)  # close sliver gaps at borough seams (~200 m), keep the outline
+    mask = box(-1.5, 50.8, 1.5, 52.2).difference(union)
+    if mask.geom_type == "MultiPolygon":  # drop tiny leftover fragments (unclosed gaps inside London)
+        parts = sorted(mask.geoms, key=lambda g: g.area, reverse=True)
+        log.info("london mask: dropping %d small fragment(s), areas %s", len(parts) - 1, [round(g.area, 6) for g in parts[1:]])
+        mask = parts[0]
+    log.info("london mask: %s with %d part(s)", mask.geom_type, len(getattr(mask, "geoms", [mask])))
+    return {"type": "Feature", "geometry": mapping(mask), "properties": {}}
+
+
 def create_app() -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     store = DataStore()
     store.refresh()
     boroughs = load_boroughs()
     geo = GeoLookups(boroughs)
+    mask = london_mask(boroughs)
 
     @app.before_request
     def _refresh():
@@ -50,6 +67,10 @@ def create_app() -> Flask:
     @app.route("/api/boroughs.geojson")
     def boroughs_geojson():
         return jsonify(boroughs)
+
+    @app.route("/api/london_mask.geojson")
+    def london_mask_geojson():
+        return jsonify(mask)
 
     @app.route("/api/options")
     def options():

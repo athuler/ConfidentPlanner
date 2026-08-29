@@ -3,8 +3,11 @@ const BREAKS = [0.5, 0.6, 0.7, 0.8, 0.9, 1.01];
 const SCALE = ["#f1eef6", "#d0d1e6", "#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d"]; // light -> dark = low -> high approval
 const GREY = "#c9ced4";
 
-const map = L.map("map", { zoomControl: true }).setView([51.5, -0.1], 10);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
+const map = L.map("map", { zoomControl: true, minZoom: 9, maxBoundsViscosity: 1 }).setView([51.5, -0.1], 10);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19, attribution: "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
+}).addTo(map); // desaturated via CSS (.leaflet-tile-pane filter) - no API key needed
+let maskLayer = null;
 
 let boroughLayer = null, gridLayer = null, currentBorough = null, boroughsGeo = null;
 let debounceTimer = null;
@@ -53,8 +56,9 @@ function tooltipHtml(name, r) {
 }
 
 async function loadBoroughs() {
-  const [geo, rates] = await Promise.all([getJSON("/api/boroughs.geojson"), getJSON("/api/rates?" + filterParams())]);
+  const [geo, rates, mask] = await Promise.all([getJSON("/api/boroughs.geojson"), getJSON("/api/rates?" + filterParams()), getJSON("/api/london_mask.geojson")]);
   boroughsGeo = geo;
+  maskLayer = L.geoJSON(mask, { interactive: false, style: { color: "#9aa3ad", weight: 1.5, fillColor: "#ffffff", fillOpacity: 0.92 } }).addTo(map);
   boroughLayer = L.geoJSON(geo, {
     style: f => styleFor(f, rates.boroughs),
     onEachFeature: (f, layer) => {
@@ -69,6 +73,7 @@ async function loadBoroughs() {
     },
   }).addTo(map);
   map.fitBounds(boroughLayer.getBounds());
+  map.setMaxBounds(boroughLayer.getBounds().pad(0.15));
   applyRates(rates);
 }
 
