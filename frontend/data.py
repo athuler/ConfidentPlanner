@@ -144,6 +144,17 @@ class DataStore:
     def overall(self, df: pd.DataFrame) -> dict:
         return self._rate(df)
 
+    @staticmethod
+    def cell_steps(cell_m: float) -> tuple[float, float]:
+        return cell_m / (111_320 * math.cos(math.radians(51.5))), cell_m / 110_574  # (dlon, dlat)
+
+    def by_year(self, g: pd.DataFrame, min_n: int = 1) -> dict:
+        out = {}
+        for y, gg in g.groupby("year"):
+            if pd.notna(y) and len(gg) >= min_n:
+                out[int(y)] = self._rate(gg)
+        return out
+
     def grid(self, df: pd.DataFrame, borough: str, cell_m: float = DEFAULT_CELL_M) -> dict:
         g = df[(df["Borough"] == borough) & df["Lat"].notna() & df["Lon"].notna()]
         if g.empty:
@@ -182,6 +193,8 @@ class DataStore:
             "flood": {"in_zone": self._rate(g[flood]), "not_in_zone": self._rate(g[~flood])},
             "density": {b: self._rate(g[g["density_band"] == b]) for b, _, _ in DENSITY_BANDS},
             "app_types": [{"value": str(k), "n": int(r["count"]), "rate": float(r["mean"])} for k, r in types.iterrows()],
+            "by_year": self.by_year(g),
+            "london_by_year": self.by_year(df),
         }
 
     def options(self) -> dict:
@@ -233,9 +246,18 @@ class DataStore:
         nearest = sub.iloc[order]
         by_day = {k: self._rate(g) for k, g in near.groupby("Day of the Week")}
         by_month = {int(k): self._rate(g) for k, g in near.groupby("month") if pd.notna(k)}
+        # the 500 m heatmap cell containing the point: rate + yearly history when there is enough data
+        dlon, dlat = self.cell_steps(DEFAULT_CELL_M)
+        ix, iy = math.floor(lon / dlon), math.floor(lat / dlat)
+        in_cell = sub[(np.floor(sub["Lon"].to_numpy() / dlon) == ix) & (np.floor(sub["Lat"].to_numpy() / dlat) == iy)]
+        cell_years = self.by_year(in_cell, min_n=3)
+        cell = {"cell_m": DEFAULT_CELL_M, "stats": self._rate(in_cell), "by_year": cell_years if len(cell_years) >= 3 else None}
+        borough_name = geo_features.get("borough")
+        cell["borough_by_year"] = self.by_year(df[df["Borough"] == borough_name]) if borough_name else {}
         return {
             "estimate": est,
             "similar": similar,
+            "cell": cell,
             "by_day": by_day,
             "by_month": by_month,
             "nearby_features": {

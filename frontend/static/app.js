@@ -252,6 +252,26 @@ function closePointBox() {
   if (currentBorough) showBoroughBox(); else { document.getElementById("point-box").hidden = true; boxMode = null; }
 }
 
+function yearChart(byYear, refByYear, refLabel) {
+  const years = Object.keys(byYear || {}).map(Number).sort((a, b) => a - b);
+  if (!years.length) return "<div class='muted'>no yearly data</div>";
+  const W = 300, H = 90, top = 6, bottom = 16, left = 4, bw = (W - left * 2) / years.length;
+  const y = r => top + (1 - r) * (H - top - bottom);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" class="yearchart" preserveAspectRatio="none">`;
+  years.forEach((yr, i) => {
+    const r = byYear[yr]; const x = left + i * bw;
+    svg += `<rect x="${(x + 1).toFixed(1)}" y="${y(r.rate).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${(H - bottom - y(r.rate)).toFixed(1)}" fill="${color(r.rate)}"><title>${yr}: ${pct(r.rate)} (${r.n.toLocaleString()} decided)</title></rect>`;
+    svg += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 4}" font-size="8" text-anchor="middle" fill="#5b6573">${String(yr).slice(2)}</text>`;
+    svg += `<text x="${(x + bw / 2).toFixed(1)}" y="${(y(r.rate) - 1.5).toFixed(1)}" font-size="7" text-anchor="middle" fill="#1d2430">${Math.round(100 * r.rate)}</text>`;
+  });
+  if (refByYear) {
+    const pts = years.filter(yr => refByYear[yr] && refByYear[yr].rate !== null).map((yr, _, arr) => `${(left + (years.indexOf(yr) + 0.5) * bw).toFixed(1)},${y(refByYear[yr].rate).toFixed(1)}`);
+    if (pts.length > 1) svg += `<polyline points="${pts.join(" ")}" fill="none" stroke="#1d2430" stroke-width="1" stroke-dasharray="3 2"><title>${refLabel}</title></polyline>`;
+  }
+  svg += `</svg>`;
+  return svg + (refByYear ? `<div class="muted" style="font-size:11px">bars = approval rate by year (label = %); dashed = ${refLabel}</div>` : "");
+}
+
 function rateRow(label, r) {
   return `<tr><td>${label}</td><td>${r && r.n ? `${pct(r.rate)} <small class="muted">(${r.n.toLocaleString()})</small>` : "<small class='muted'>–</small>"}</td></tr>`;
 }
@@ -270,7 +290,10 @@ async function showBoroughBox() {
       <div class="big">${pct(s.rate)}</div>
       <div class="muted">${s.approved.toLocaleString()} approved of ${s.n.toLocaleString()} decided (current filters) · London ${pct(L_.rate)}</div>
       <div class="muted" style="margin:6px 0 4px"><b>Click anywhere in the borough</b> for a point assessment.</div>
+      <div class="section-title">By year</div>
+      ${yearChart(r.by_year, r.london_by_year, "London")}
       <table>
+        <tr><th colspan="2">By year</th></tr>${Object.keys(r.by_year).map(Number).sort((a, b) => a - b).map(yr => rateRow(String(yr), r.by_year[yr])).join("")}
         <tr><th colspan="2">Conservation area</th></tr>${rateRow("inside", r.conservation.inside)}${rateRow("outside", r.conservation.outside)}
         <tr><th colspan="2">Flood risk</th></tr>${rateRow("in zone", r.flood.in_zone)}${rateRow("not in zone", r.flood.not_in_zone)}
         <tr><th colspan="2">Population density (ward)</th></tr>${["low", "medium", "high"].map(b => rateRow(b, r.density[b])).join("")}
@@ -301,6 +324,8 @@ function renderPoint(r, day, month) {
       <label>Month<select name="month">${opt(r.by_month ? Object.keys(r.by_month).map(Number).sort((a, b) => a - b) : [], month, m => MONTHS[m - 1])}</select></label>
     </div>
     ${byDay ? `<div class="muted">${day}: ${pct(byDay.rate)} (${byDay.n} nearby)</div>` : ""}
+    <div class="section-title">This ${fmt(r.cell.cell_m)} m cell: ${pct(r.cell.stats.rate)} <small class="muted">(${r.cell.stats.n} decided)</small></div>
+    ${r.cell.by_year ? yearChart(r.cell.by_year, r.cell.borough_by_year, (f.borough || "borough") + " average") : `<div class="muted">not enough data for a yearly trend in this cell (n = ${r.cell.stats.n}; needs ≥ 3 decisions in each of ≥ 3 years)</div>`}
     ${byMonth ? `<div class="muted">${MONTHS[month - 1]}: ${pct(byMonth.rate)} (${byMonth.n} nearby)</div>` : ""}
     <table>
       <tr><td>Location</td><td>${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}</td></tr>

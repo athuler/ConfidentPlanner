@@ -40,3 +40,6 @@ input[type=number] { width: 70px; }
 
 /* muted basemap: desaturate + lighten the raster tiles so the choropleth stands out */
 .leaflet-tile-pane { filter: grayscale(1) brightness(1.08) contrast(0.85); }
+
+#point-box .section-title { font-weight: 600; font-size: 13px; margin: 10px 0 2px; }
+#point-box .yearchart { width: 100%; height: 90px; display: block; margin: 2px 0; }
