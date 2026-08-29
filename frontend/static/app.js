@@ -268,3 +268,11 @@ function renderPoint(r, day, month) {
   box.querySelectorAll("select").forEach(sel => sel.onchange = () => assessPoint(pointLatLng));
 }
 document.getElementById("filters").addEventListener("change", () => { if (pointLatLng && !document.getElementById("point-box").hidden) setTimeout(() => assessPoint(pointLatLng), 200); });
+
+/* ESC: close the point box first if open, otherwise leave the selected borough */
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  const box = document.getElementById("point-box");
+  if (!box.hidden) { box.hidden = true; if (pointMarker) { map.removeLayer(pointMarker); pointMarker = null; } return; }
+  if (currentBorough) backToLondon();
+});
