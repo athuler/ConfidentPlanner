@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confident Planner</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <aside id="sidebar">
+    <h1>Confident Planner</h1>
+    <p class="sub">Likelihood of a planning application being approved, London</p>
+    <p class="muted">Click a borough to zoom in; click anywhere inside it to assess that point.</p>
+    <div id="dataset" class="muted">loading…</div>
+
+    <section class="stat">
+      <div><span id="overall-rate">–</span><small> approved</small></div>
+      <div class="muted" id="overall-n"></div>
+    </section>
+
+    <div id="view-bar">
+      <button id="back" hidden>◀ Back to London</button>
+      <span id="view-title">All boroughs</span>
+    </div>
+
+    <form id="filters">
+      <fieldset>
+        <legend>Flood risk zone</legend>
+        <label><input type="radio" name="flood" value="any" checked> any</label>
+        <label><input type="radio" name="flood" value="yes"> in zone</label>
+        <label><input type="radio" name="flood" value="no"> not in zone</label>
+      </fieldset>
+      <fieldset>
+        <legend>Conservation area</legend>
+        <label><input type="radio" name="conservation" value="any" checked> any</label>
+        <label><input type="radio" name="conservation" value="yes"> inside</label>
+        <label><input type="radio" name="conservation" value="no"> outside</label>
+      </fieldset>
+      <fieldset id="months">
+        <legend>Month validated</legend>
+      </fieldset>
+      <fieldset id="days">
+        <legend>Day of the week validated</legend>
+      </fieldset>
+      <fieldset id="app-types">
+        <legend>Application type</legend>
+      </fieldset>
+      <fieldset id="years">
+        <legend>Years</legend>
+        <label>from <input type="number" name="year_min" min="2016" max="2026" step="1"></label>
+        <label>to <input type="number" name="year_max" min="2016" max="2026" step="1"></label>
+      </fieldset>
+      <button type="button" id="reset">Reset filters</button>
+    </form>
+
+    <div id="legend">
+      <div class="legend-title">Approval rate</div>
+      <div id="legend-scale"></div>
+      <div class="muted">grey = fewer than 5 decided applications</div>
+    </div>
+  </aside>
+  <div id="map">
+    <div id="point-box" hidden></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

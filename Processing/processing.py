@@ -35,6 +35,7 @@ import re
 import sys
 import time
 import zipfile
+import zlib
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -295,6 +296,43 @@ def flatten_doc(src: dict) -> dict:
     return row
 
 
+def verify_jsonl_gz(path: Path):
+    """Return (n_complete_lines, last_line, intact) for a jsonl.gz, tolerating truncation/corruption."""
+    n, last, intact = 0, None, True
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                if not line.endswith("\n"):
+                    break
+                n += 1
+                last = line
+    except (EOFError, zlib.error, OSError) as exc:
+        log.warning("%s: unreadable after %d docs (%s)", path.name, n, exc)
+        intact = False
+    return n, last, intact
+
+
+def rewrite_prefix(path: Path, n: int) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    with gzip.open(path, "rt", encoding="utf-8") as src, gzip.open(tmp, "wt", encoding="utf-8") as dst:
+        try:
+            for i, line in enumerate(src):
+                if i >= n or not line.endswith("\n"):
+                    break
+                dst.write(line)
+        except (EOFError, zlib.error, OSError):
+            pass
+    tmp.replace(path)
+
+
+def sort_key_for(doc: dict):
+    vd, _id = doc.get("valid_date"), doc.get("id")
+    if not vd or not _id:
+        return None
+    ms = int(datetime.strptime(vd, "%d/%m/%Y").replace(tzinfo=timezone.utc).timestamp() * 1000)
+    return [ms, _id]
+
+
 def download_datahub(
     years,
     out_dir: Path,
@@ -341,11 +379,20 @@ def download_datahub(
             meta_path.write_text(json.dumps({"complete": True, "expected": 0, "downloaded": 0, "fetched_at": datetime.now(timezone.utc).isoformat()}))
             continue
 
-        resume = meta.get("last_sort") if meta.get("downloaded") and not refresh else None
-        downloaded = meta.get("downloaded", 0) if resume else 0
+        resume, downloaded = None, 0
+        if raw.exists() and meta.get("downloaded") and not refresh:
+            n_ok, last_line, intact = verify_jsonl_gz(raw)
+            key = sort_key_for(json.loads(last_line)) if last_line else None
+            if not intact or n_ok != meta.get("downloaded"):
+                log.warning("[datahub %d] file truncated/corrupt at %d docs (meta said %d) - repairing", year, n_ok, meta.get("downloaded"))
+                if key:
+                    rewrite_prefix(raw, n_ok)
+                else:
+                    raw.unlink(missing_ok=True)
+            if key:
+                resume, downloaded = key, n_ok
+                log.info("[datahub %d] resuming after %d verified docs", year, downloaded)
         mode = "at" if resume else "wt"
-        if resume:
-            log.info("[datahub %d] resuming after %d docs", year, downloaded)
         pages_total = math.ceil(expected / DATAHUB_PAGE_SIZE)
         t0 = time.perf_counter()
         bytes_written = 0
@@ -423,9 +470,20 @@ def load_datahub(years, out_dir: Path, columns: str = "default", refresh: bool =
         else:
             t0 = time.perf_counter()
             rows = []
-            with gzip.open(path, "rt", encoding="utf-8") as fh:
-                for line in fh:
-                    rows.append(flatten_doc(json.loads(line)))
+            try:
+                with gzip.open(path, "rt", encoding="utf-8") as fh:
+                    for line in fh:
+                        rows.append(flatten_doc(json.loads(line)))
+            except (EOFError, zlib.error, OSError, json.JSONDecodeError) as exc:
+                year = int(re.search(r"applications_(\d{4})", path.name).group(1))
+                log.error("%s is corrupt (%s) - deleting and re-downloading %d", path.name, exc, year)
+                for junk in (path, path.with_name(path.name.replace(".jsonl.gz", ".meta.json")), cached):
+                    junk.unlink(missing_ok=True)
+                download_datahub([year], out_dir, columns, True, session)
+                rows = []
+                with gzip.open(path, "rt", encoding="utf-8") as fh:
+                    for line in fh:
+                        rows.append(flatten_doc(json.loads(line)))
             df = pd.DataFrame(rows)
             log.info("Flattened %s: %d rows, %d cols in %.1fs", path.name, len(df), df.shape[1], time.perf_counter() - t0)
             try:
@@ -1011,7 +1069,7 @@ def parse_years(spec: str) -> list[int]:
             years.update(range(int(a), int(b) + 1))
         elif part:
             years.add(int(part))
-    return sorted(years)
+    return sorted(years, reverse=True)  # newest first
 
 
 def summarise(df: pd.DataFrame, caches: dict[str, JsonCache], rows_in: int, show_sample: int) -> None:
@@ -1041,52 +1099,7 @@ def summarise(df: pd.DataFrame, caches: dict[str, JsonCache], rows_in: int, show
             log.info("Sample rows:\n%s", df[cols].head(show_sample).T.to_string())
 
 
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--source", choices=["datahub", "csv"], default="datahub")
-    ap.add_argument("--years", default=str(datetime.now().year), help="Datahub valid_date years, e.g. 2016-2026, 2024, 2019,2021 (default: current year only)")
-    ap.add_argument("--columns", default="default", help="Datahub column set: default | full | slim | comma list")
-    ap.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
-    ap.add_argument("--out", type=Path, default=None, help="default: <data-dir>/processed/applications_enriched.csv")
-    ap.add_argument("--conservation-geojson", type=Path, default=None)
-    ap.add_argument("--limit", type=int, default=None, help="keep only the first N rows (dev loop)")
-    ap.add_argument("--lpa-numbers", default=None, help="comma-separated LPA Numbers to keep (dev loop)")
-    ap.add_argument("--steps", default=",".join(STEPS), help=f"comma list of steps to run; default {','.join(STEPS)}")
-    ap.add_argument("--skip-parks", action="store_true")
-    ap.add_argument("--show-sample", type=int, default=0, help="print N enriched rows at the end")
-    ap.add_argument("--refresh-cache", nargs="?", const="all", choices=["all", "datahub", "postcodes", "parks", "flood"])
-    ap.add_argument("-v", "--verbose", action="store_true")
-    args = ap.parse_args(argv)
-
-    data_dir: Path = args.data_dir
-    out: Path = args.out or data_dir / "processed" / "applications_enriched.csv"
-    cache_dir, reference_dir, datahub_dir = data_dir / "cache", data_dir / "reference", data_dir / "datahub"
-    setup_logging(out.parent / "processing.log", args.verbose)
-    log.info("args: %s", vars(args))
-    steps = set(s.strip() for s in args.steps.split(","))
-    if args.skip_parks:
-        steps.discard("parks")
-    refresh = lambda name: args.refresh_cache in ("all", name)  # noqa: E731
-
-    caches = {"postcodes": JsonCache(cache_dir / "postcodes.json"), "datahub_ids": JsonCache(cache_dir / "datahub_ids.json"), "parks": JsonCache(cache_dir / "parks_osm.json")}
-    for name, c in caches.items():
-        if refresh(name) or (name == "datahub_ids" and refresh("datahub")):
-            log.info("Refreshing cache: %s", name)
-            c.clear()
-    if refresh("flood"):
-        for p in [reference_dir / "flood_risk_zones_london.geojson", *(reference_dir / "flood_pages").glob("*.geojson")]:
-            p.unlink(missing_ok=True)
-
-    session = make_session()
-    dh_session = datahub_session()
-    columns = args.columns if args.columns in DATAHUB_COLUMN_SETS else [c.strip() for c in args.columns.split(",")]
-
-    with timed("load"):
-        if args.source == "datahub":
-            df = load_datahub(parse_years(args.years), datahub_dir, columns, refresh("datahub"), dh_session)
-        else:
-            df = load_csvs(data_dir)
-            df = enrich_csv_from_datahub(df, caches["datahub_ids"], dh_session)
+def run_pipeline(df: pd.DataFrame, args, out: Path, caches, session, data_dir: Path, reference_dir: Path, steps: set) -> pd.DataFrame:
     rows_in = len(df)
     if args.lpa_numbers:
         keep = {s.strip() for s in args.lpa_numbers.split(",")}
@@ -1129,11 +1142,81 @@ def main(argv=None) -> int:
             pq = df.copy()
             for c in pq.columns[pq.dtypes == object]:
                 pq[c] = pq[c].map(lambda v: v if v is None or isinstance(v, str) or (isinstance(v, float) and pd.isna(v)) else json.dumps(v) if isinstance(v, (list, dict)) else str(v))
-            pq.to_parquet(out.with_suffix(".parquet"), index=False)
+            tmp = out.with_suffix(".parquet.tmp")
+            pq.to_parquet(tmp, index=False)
+            tmp.replace(out.with_suffix(".parquet"))
             log.info("Wrote %s", out.with_suffix(".parquet"))
         except Exception as exc:  # noqa: BLE001
             log.warning("Parquet output skipped: %s", exc)
     summarise(df, caches, rows_in, args.show_sample)
+    return df
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--source", choices=["datahub", "csv"], default="datahub")
+    ap.add_argument("--years", default=str(datetime.now().year), help="Datahub valid_date years, e.g. 2016-2026, 2024, 2019,2021 (default: current year only)")
+    ap.add_argument("--per-year", action="store_true", help="process each year separately, newest first, writing applications_enriched_<year>.*")
+    ap.add_argument("--columns", default="default", help="Datahub column set: default | full | slim | comma list")
+    ap.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    ap.add_argument("--out", type=Path, default=None, help="default: <data-dir>/processed/applications_enriched.csv")
+    ap.add_argument("--conservation-geojson", type=Path, default=None)
+    ap.add_argument("--limit", type=int, default=None, help="keep only the first N rows (dev loop)")
+    ap.add_argument("--lpa-numbers", default=None, help="comma-separated LPA Numbers to keep (dev loop)")
+    ap.add_argument("--steps", default=",".join(STEPS), help=f"comma list of steps to run; default {','.join(STEPS)}")
+    ap.add_argument("--skip-parks", action="store_true")
+    ap.add_argument("--show-sample", type=int, default=0, help="print N enriched rows at the end")
+    ap.add_argument("--refresh-cache", nargs="?", const="all", choices=["all", "datahub", "postcodes", "parks", "flood"])
+    ap.add_argument("-v", "--verbose", action="store_true")
+    args = ap.parse_args(argv)
+
+    data_dir: Path = args.data_dir
+    out: Path = args.out or data_dir / "processed" / "applications_enriched.csv"
+    cache_dir, reference_dir, datahub_dir = data_dir / "cache", data_dir / "reference", data_dir / "datahub"
+    setup_logging(out.parent / "processing.log", args.verbose)
+    log.info("args: %s", vars(args))
+    steps = set(s.strip() for s in args.steps.split(","))
+    if args.skip_parks:
+        steps.discard("parks")
+    refresh = lambda name: args.refresh_cache in ("all", name)  # noqa: E731
+
+    caches = {"postcodes": JsonCache(cache_dir / "postcodes.json"), "datahub_ids": JsonCache(cache_dir / "datahub_ids.json"), "parks": JsonCache(cache_dir / "parks_osm.json")}
+    for name, c in caches.items():
+        if refresh(name) or (name == "datahub_ids" and refresh("datahub")):
+            log.info("Refreshing cache: %s", name)
+            c.clear()
+    if refresh("flood"):
+        for p in [reference_dir / "flood_risk_zones_london.geojson", *(reference_dir / "flood_pages").glob("*.geojson")]:
+            p.unlink(missing_ok=True)
+
+    session = make_session()
+    dh_session = datahub_session()
+    columns = args.columns if args.columns in DATAHUB_COLUMN_SETS else [c.strip() for c in args.columns.split(",")]
+
+    if args.source == "csv":
+        with timed("load"):
+            df = load_csvs(data_dir)
+            df = enrich_csv_from_datahub(df, caches["datahub_ids"], dh_session)
+        run_pipeline(df, args, out, caches, session, data_dir, reference_dir, steps)
+        return 0
+
+    years = parse_years(args.years)
+    if not args.per_year:
+        with timed("load"):
+            df = load_datahub(years, datahub_dir, columns, refresh("datahub"), dh_session)
+        run_pipeline(df, args, out, caches, session, data_dir, reference_dir, steps)
+        return 0
+
+    log.info("Per-year mode: %s", years)
+    for year in years:
+        year_out = out.with_name(f"{out.stem}_{year}{out.suffix}")
+        if year_out.with_suffix(".parquet").exists() and not args.refresh_cache and not args.limit:
+            log.info("[%d] %s already exists - skipping (use --refresh-cache to redo)", year, year_out.with_suffix(".parquet").name)
+            continue
+        with timed(f"year {year}"):
+            with timed(f"load {year}"):
+                df = load_datahub([year], datahub_dir, columns, refresh("datahub"), dh_session)
+            run_pipeline(df, args, year_out, caches, session, data_dir, reference_dir, steps)
     return 0
 
 

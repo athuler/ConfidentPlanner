@@ -1,0 +1,38 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #1d2430; }
+body { display: flex; }
+#sidebar { width: 340px; flex: 0 0 340px; height: 100vh; overflow-y: auto; padding: 16px 18px 24px; background: #f7f8fa; border-right: 1px solid #dfe3e8; }
+#map { flex: 1; height: 100vh; }
+h1 { font-size: 20px; margin: 0 0 2px; }
+.sub { margin: 0 0 8px; color: #5b6573; }
+.muted { color: #6b7684; font-size: 12px; }
+.stat { margin: 12px 0; padding: 10px 12px; background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; }
+.stat #overall-rate { font-size: 28px; font-weight: 600; }
+#view-bar { display: flex; align-items: center; gap: 8px; margin: 8px 0 12px; }
+#view-title { font-weight: 600; }
+button { cursor: pointer; padding: 6px 10px; border-radius: 6px; border: 1px solid #c8ced6; background: #fff; }
+button:hover { background: #eef1f5; }
+fieldset { border: 1px solid #dfe3e8; border-radius: 8px; padding: 8px 10px; margin: 0 0 10px; background: #fff; }
+legend { font-weight: 600; padding: 0 4px; }
+fieldset label { display: inline-block; margin: 2px 8px 2px 0; white-space: nowrap; }
+#months label, #days label { min-width: 62px; }
+#app-types label { display: block; white-space: normal; }
+#app-types small { color: #6b7684; }
+input[type=number] { width: 70px; }
+#legend { margin-top: 12px; padding: 10px 12px; background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; }
+.legend-title { font-weight: 600; margin-bottom: 6px; }
+#legend-scale { display: flex; gap: 2px; }
+#legend-scale div { flex: 1; text-align: center; font-size: 11px; padding: 4px 0; color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.6); }
+.leaflet-tooltip.rate-tip { font-size: 13px; }
+.leaflet-tooltip.rate-tip b { font-size: 14px; }
+#point-box { position: absolute; top: 12px; right: 12px; z-index: 1000; width: 330px; max-height: calc(100vh - 24px); overflow-y: auto; background: #fff; border: 1px solid #c8ced6; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.18); padding: 12px 14px; }
+#point-box h2 { font-size: 15px; margin: 0 0 6px; display: flex; justify-content: space-between; align-items: center; }
+#point-box .big { font-size: 30px; font-weight: 700; }
+#point-box table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+#point-box td { padding: 3px 0; border-top: 1px solid #eef0f3; vertical-align: top; }
+#point-box td:first-child { color: #5b6573; width: 46%; }
+#point-box select { width: 100%; margin-top: 2px; }
+#point-box .row { display: flex; gap: 8px; margin-top: 8px; }
+#point-box .row label { flex: 1; font-size: 12px; color: #5b6573; }
+#point-box .close { border: none; background: none; font-size: 18px; cursor: pointer; }
+.yes { color: #b30000; font-weight: 600; } .no { color: #1a7f37; font-weight: 600; }

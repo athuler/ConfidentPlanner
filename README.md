@@ -68,3 +68,26 @@ A repeat run makes no API calls except one cheap count per year. Set `LONDON_DAT
 | Flood risk zones | [planning.data.gov.uk](https://www.planning.data.gov.uk/docs) `flood-risk-zone` | OGL v3 |
 | Population density | ONS Census 2021 [TS006](https://www.nomisweb.co.uk/datasets/c2021ts006) | OGL v3 |
 | Parks | OpenStreetMap via Overpass | ODbL |
+
+## Web app (`frontend/`, `run.py`)
+
+```bash
+source venv/bin/activate
+python run.py            # http://localhost:5000  (--port to change)
+```
+
+One page: a London map with each borough coloured by the share of decided applications that were approved.
+Click a borough to zoom in and see a ~300 m grid heatmap of approval rates; click anywhere inside it to assess
+that point — a box shows the likelihood (nearest decided applications within 250 m–2 km), the rate among
+neighbours with the same conservation/flood status, the borough average, and the point's features
+(conservation area, flood zone, ward population density, distance to park), with day-of-week and month toggles.
+Sidebar toggles (flood zone, conservation area, month, day of the week, application type, year range) re-query
+every view.
+
+The app reads every `Data/processed/applications_enriched_<year>.parquet` and reloads automatically when the
+background pipeline (`python Processing/processing.py --years 2016-2026 --per-year`, newest year first)
+finishes another year.
+
+API: `/api/rates`, `/api/heatmap/<borough>`, `/api/point?lat=&lon=`, `/api/options`, `/api/boroughs.geojson` —
+all accept the filter query params `flood=any|yes|no`, `conservation=any|yes|no`, `months=1,2`, `days=Monday,…`,
+`app_types=…`, `year_min`, `year_max`.
