@@ -1,0 +1,9 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+Data/cache/
+Data/processed/
+Data/datahub/
+Data/reference/
+Data/*.geojson
