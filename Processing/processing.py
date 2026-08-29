@@ -603,6 +603,21 @@ def add_dates(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def decision_to_bool(value):
+    """Approved -> True, any other decision -> False, blank (no decision yet) -> <NA>."""
+    if not isinstance(value, str) or not value.strip():
+        return pd.NA
+    return value.strip().lower().startswith("approv")
+
+
+def add_decision_flag(df: pd.DataFrame) -> pd.DataFrame:
+    df["Approved?"] = df["Decision"].map(decision_to_bool).astype("boolean")
+    counts = df["Approved?"].value_counts(dropna=False).to_dict()
+    other = df.loc[df["Approved?"] == False, "Decision"].value_counts().head(8).to_dict()  # noqa: E712
+    log.info("Approved?: %s; most common non-approved decisions: %s", counts, other)
+    return df
+
+
 # --------------------------------------------------------------------------- #
 # 3. Geocoding: Datahub centroid first, postcodes.io second
 # --------------------------------------------------------------------------- #
@@ -980,8 +995,8 @@ def add_distance_to_park(df: pd.DataFrame, cache: JsonCache, session: requests.S
 # --------------------------------------------------------------------------- #
 # 7. Orchestration
 # --------------------------------------------------------------------------- #
-NEW_COLUMNS = ["Lat", "Lon", "Borough", "Month", "Day of the Week", "Conservation Area?", "Population Density", "Distance to Park (m)", "Flood risk?"]
-SAMPLE_COLUMNS = ["LPA Number", "Borough", "Postcode", "Valid date", "Decision", "Lat", "Lon", "latlon_source", "Month", "Day of the Week",
+NEW_COLUMNS = ["Approved?", "Lat", "Lon", "Borough", "Month", "Day of the Week", "Conservation Area?", "Population Density", "Distance to Park (m)", "Flood risk?"]
+SAMPLE_COLUMNS = ["LPA Number", "Borough", "Postcode", "Valid date", "Decision", "Approved?", "Lat", "Lon", "latlon_source", "Month", "Day of the Week",
                   "Conservation Area?", "conservation_area_name", "Flood risk?", "flood_zone", "Population Density", "population_density_level", "Population Density (OA)", "ward_name", "postcode_source",
                   "Distance to Park (m)", "dh_ward", "dh_application_type_full", "dh_application_details.site_area"]
 STEPS = ["geocode", "conservation", "flood", "density", "parks"]
@@ -1083,6 +1098,7 @@ def main(argv=None) -> int:
 
     with timed("dates"):
         df = add_dates(df)
+        df = add_decision_flag(df)
     if "geocode" in steps:
         with timed("geocode"):
             df = add_geocoding(df, caches["postcodes"], session)
