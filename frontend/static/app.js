@@ -124,7 +124,7 @@ function showDataset(ds) {
   if (ds.ml) updateModelStatus(ds.ml);
   const years = ds.years && ds.years.length ? `${ds.years[0]}–${ds.years[ds.years.length - 1]}` : "–";
   document.getElementById("dataset").textContent =
-    `${ds.rows_decided.toLocaleString()} decided of ${ds.rows_total.toLocaleString()} applications · years ${years} · ${ds.files.length} file(s)`;
+    `${ds.rows_total.toLocaleString()} applications (${years})`;
 }
 
 function tooltipHtml(name, r) {

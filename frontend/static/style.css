@@ -77,3 +77,12 @@ button.help { width: 18px; height: 18px; padding: 0; border-radius: 50%; font-si
 fieldset.not-used { opacity: .45; }
 .ml-hint { font-size: 11px; margin-top: 4px; }
 .ml-hint[hidden] { display: none; }
+
+/* about / credits footer at the bottom of the sidebar */
+#about { margin-top: 18px; padding-top: 12px; border-top: 1px solid #dfe3e8; color: #5b6573; font-size: 12px; line-height: 1.45; }
+#about h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #6b7684; margin: 12px 0 4px; }
+#about p { margin: 0 0 6px; }
+#about ul { margin: 0; padding-left: 16px; }
+#about li { margin: 2px 0; }
+#about a { color: #2b6cb0; text-decoration: none; }
+#about a:hover { text-decoration: underline; }

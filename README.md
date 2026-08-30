@@ -113,9 +113,11 @@ python Processing/processing.py --years 2026 --per-year          # at least one 
 python run.py                                                    # http://localhost:5000
 ```
 
-Flags: `--port 5000` (change the port), `--host 0.0.0.0` (default: reachable from other machines on your network; use
-`--host 127.0.0.1` for local only), `--debug` (Flask auto-reload; slower, reloads the data on every code edit).
-Stop it with `Ctrl+C`.
+Runs in debug mode by default: template edits show on the next refresh, Python edits restart the server
+(~15 s to reload the data), and errors show a traceback in the browser. Flags: `--port 5000` (change the port),
+`--host 0.0.0.0` (default: reachable from other machines on your network; use `--host 127.0.0.1` for local only),
+`--no-debug` (plain server, no reloading). Stop it with `Ctrl+C`. Production uses gunicorn via `frontend/wsgi.py`
+instead (see [deploy.md](deploy.md)).
 
 Startup takes ~10–30 s while it loads every `Data/processed/applications_enriched_<year>.parquet`, downloads the
 borough boundaries once (cached in `Data/reference/`), and loads the ML model from `Model/` if present — watch for

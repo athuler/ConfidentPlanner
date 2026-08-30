@@ -18,8 +18,7 @@
 <body>
   <aside id="sidebar">
     <h1>Confident Planner</h1>
-    <p class="sub">Likelihood of a planning application being approved, London</p>
-    <p class="muted">Click a borough to zoom in; click anywhere inside it to assess that point.</p>
+    <p class="sub">Tool to find the likelihood of a London planning application being approved</p>
     <div id="dataset" class="muted">loading…</div>
 
     <section class="stat">
@@ -100,6 +99,32 @@
       <div id="legend-scale"></div>
       <div class="muted">grey = fewer than 5 decided applications</div>
     </div>
+
+    <footer id="about">
+      <h2>About</h2>
+      <p>Built at the
+        <a href="https://house-london.uk/" target="_blank" rel="noopener">House London #1 data hackathon</a>. Won the 2nd place jury prize and the
+        2nd place people's choice prize.
+        <a href="https://github.com/athuler/ConfidentPlanner" target="_blank" rel="noopener">Source on GitHub</a>.</p>
+      <h2>Team</h2>
+      <ul>
+        <li>Andrei Thüler — <a href="https://github.com/athuler" target="_blank" rel="noopener">GitHub</a> · <a href="https://www.linkedin.com/in/andreithuler/" target="_blank" rel="noopener">LinkedIn</a> · <a href="https://andreithuler.com" target="_blank" rel="noopener">Website</a></li>
+        <li>Amy Li — <a href="https://github.com/amyli06" target="_blank" rel="noopener">GitHub</a> · <a href="https://www.linkedin.com/in/amy-li-0a28192b8/" target="_blank" rel="noopener">LinkedIn</a></li>
+        <li>Anson Kong — <a href="https://github.com/Hotstopper" target="_blank" rel="noopener">GitHub</a> · <a href="https://www.linkedin.com/in/anson-kongtszhin/" target="_blank" rel="noopener">LinkedIn</a></li>
+        <li>Mark Fothergill — <a href="https://github.com/markfoth" target="_blank" rel="noopener">GitHub</a> · <a href="https://www.linkedin.com/in/mark-fothergill/" target="_blank" rel="noopener">LinkedIn</a></li>
+        <li>Steven Li — <a href="https://github.com/InForsaken" target="_blank" rel="noopener">GitHub</a> · <a href="https://www.linkedin.com/in/stevenli02" target="_blank" rel="noopener">LinkedIn</a></li>
+      </ul>
+      <h2>Data sources</h2>
+      <ul>
+        <li><a href="https://planninglondondatahub.london.gov.uk/" target="_blank" rel="noopener">London Planning Datahub</a> — applications and decisions (GLA, OGL v3)</li>
+        <li><a href="https://postcodes.io" target="_blank" rel="noopener">postcodes.io</a> — postcode → coordinates, borough, ward (OGL v3 / OS OpenData)</li>
+        <li><a href="https://historicengland.org.uk/listing/the-list/data-downloads/" target="_blank" rel="noopener">Historic England</a> — conservation areas (OGL v3)</li>
+        <li><a href="https://www.planning.data.gov.uk/dataset/flood-risk-zone" target="_blank" rel="noopener">planning.data.gov.uk</a> — flood risk zones (OGL v3)</li>
+        <li><a href="https://www.nomisweb.co.uk/datasets/c2021ts006" target="_blank" rel="noopener">ONS Census 2021 TS006</a> — population density (OGL v3)</li>
+        <li><a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">OpenStreetMap</a> — parks via Overpass (ODbL); basemap tiles © OpenStreetMap contributors</li>
+        <li><a href="https://geoportal.statistics.gov.uk/" target="_blank" rel="noopener">ONS Geoportal</a> — borough boundaries (OGL v3)</li>
+      </ul>
+    </footer>
   </aside>
   <div id="map">
     <div id="point-box" hidden></div>
