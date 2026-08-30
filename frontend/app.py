@@ -5,7 +5,7 @@ import logging
 import time
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from .data import DataStore, release_memory
 from .geo import GeoLookups
@@ -41,6 +41,14 @@ def create_app() -> Flask:
     @app.route("/")
     def index():
         return render_template("index.html")
+
+    @app.route("/robots.txt")
+    @app.route("/sitemap.xml")
+    def seo_files():
+        # served from the root (crawlers only look there), with a day of caching
+        name = request.path.lstrip("/")
+        mimetype = "application/xml" if name.endswith(".xml") else "text/plain"
+        return send_from_directory(app.static_folder, name, mimetype=mimetype, max_age=86400)
 
     @app.route("/api/boroughs.geojson")
     def boroughs_geojson():

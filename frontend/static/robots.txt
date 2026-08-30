@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://confidentplanner.andreithuler.com/sitemap.xml
