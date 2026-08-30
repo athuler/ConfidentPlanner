@@ -16,7 +16,8 @@ function setScaleFromValues(values) {
 const SCALE = ["#f1eef6", "#d0d1e6", "#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d"]; // light -> dark = low -> high approval
 const GREY = "#c9ced4";
 
-const map = L.map("map", { zoomControl: true, minZoom: 9, maxBoundsViscosity: 1 }).setView([51.5, -0.1], 10);
+// renderer padding: clip vector layers well outside the view, so the mask's clip edge never shows on small screens
+const map = L.map("map", { zoomControl: true, minZoom: 9, maxBoundsViscosity: 1, renderer: L.svg({ padding: 2 }) }).setView([51.5, -0.1], 10);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19, attribution: "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
 }).addTo(map); // desaturated via CSS (.leaflet-tile-pane filter) - no API key needed
@@ -26,6 +27,27 @@ let maskLayer = null;
 
 let boroughLayer = null, gridLayer = null, currentBorough = null, boroughsGeo = null;
 let debounceTimer = null;
+
+/* ---- phone layout: the sidebar is a slide-up drawer, details are a bottom sheet ---- */
+const mobile = () => window.matchMedia("(max-width: 768px)").matches;
+function setDrawer(open) {
+  document.body.classList.toggle("drawer-open", open);
+  document.getElementById("drawer-toggle").textContent = open ? "Close ▼" : "Filters ▲";
+  setTimeout(() => map.invalidateSize(), 280);
+}
+function boundsPadding(kind) {
+  if (!mobile()) return kind === "borough" ? { paddingTopLeft: [20, 20], paddingBottomRight: [360, 20] } : {};
+  const sheet = 56 + Math.round(window.innerHeight * 0.5);  // peek bar + bottom sheet
+  return { paddingTopLeft: [20, 70], paddingBottomRight: [20, kind === "borough" ? sheet : 70] };
+}
+(() => {
+  const bar = document.getElementById("mobile-bar"), back = document.getElementById("map-back");
+  bar.addEventListener("click", () => setDrawer(!document.body.classList.contains("drawer-open")));
+  L.DomEvent.disableClickPropagation(back);
+  back.addEventListener("click", () => backToLondon());
+  let rt = null;
+  window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => map.invalidateSize(), 150); });
+})();
 
 function color(rate) {
   if (rate === null || rate === undefined || Number.isNaN(rate)) return GREY;
@@ -151,7 +173,7 @@ async function loadBoroughs() {
       layer.on("mouseout", () => { if (!currentBorough) layer.setStyle({ weight: 1 }); });
     },
   }).addTo(map);
-  map.fitBounds(boroughLayer.getBounds());
+  map.fitBounds(boroughLayer.getBounds(), boundsPadding("london"));
   // generous horizontal slack: the point box (right) and sidebar (left) cover parts of the viewport
   const b = boroughLayer.getBounds();
   const dLng = (b.getEast() - b.getWest()) * 0.6, dLat = (b.getNorth() - b.getSouth()) * 0.25;
@@ -192,6 +214,7 @@ function setBoroughInteractivity(focused) {
 
 function applyRates(rates) {
   document.getElementById("overall-rate").textContent = pct(rates.overall.rate);
+  document.getElementById("mbar-rate").textContent = pct(rates.overall.rate);
   document.getElementById("overall-n").textContent = isML()
     ? `average of the predictions at the ${rates.overall.n} borough centres (your settings + description)`
     : `${rates.overall.approved.toLocaleString()} approved of ${rates.overall.n.toLocaleString()} decided (current filters)`;
@@ -223,13 +246,16 @@ async function drawGrid() {
     onEachFeature: (f, layer) => layer.bindTooltip(isML() ? `${pct(f.properties.rate)} predicted<br>for a new application in this ${grid.cell_m} m cell` : `${pct(f.properties.rate)} approved<br>${f.properties.approved} of ${f.properties.n} decided in this ${grid.cell_m} m cell`, { sticky: true, className: "rate-tip" }),
   }).addTo(map);
   document.getElementById("view-title").textContent = `${currentBorough}: ${pct(grid.stats.rate)} (${grid.stats.n.toLocaleString()} decided, ${grid.features.length} cells)`;
+  document.getElementById("mbar-view").textContent = `${currentBorough} · ${pct(grid.stats.rate)}`;
 }
 
 async function openBorough(name, layer) {
   currentBorough = name;
   console.log("open borough", name);
   document.getElementById("back").hidden = false;
-  map.fitBounds(layer.getBounds(), { paddingTopLeft: [20, 20], paddingBottomRight: [360, 20] }); // keep the borough clear of the point box
+  document.getElementById("map-back").hidden = false;
+  if (mobile()) setDrawer(false);
+  map.fitBounds(layer.getBounds(), boundsPadding("borough")); // keep the borough clear of the point box / bottom sheet
   boroughLayer.eachLayer(l => l.setStyle(styleFor(l.feature, lastBoroughRates)));
   setBoroughInteractivity(true);
   clearPointMarker();
@@ -243,9 +269,11 @@ function backToLondon() {
   document.getElementById("point-box").hidden = true;
   if (gridLayer) { map.removeLayer(gridLayer); gridLayer = null; }
   document.getElementById("back").hidden = true;
+  document.getElementById("map-back").hidden = true;
   document.getElementById("view-title").textContent = "All boroughs";
+  document.getElementById("mbar-view").textContent = "All boroughs";
   setBoroughInteractivity(false);
-  map.fitBounds(boroughLayer.getBounds());
+  map.fitBounds(boroughLayer.getBounds(), boundsPadding("london"));
   refreshRates();
 }
 
@@ -349,6 +377,7 @@ async function assessPoint(latlng) {
   pointLatLng = latlng;
   if (!pointMarker) pointMarker = L.marker(latlng).addTo(map); else pointMarker.setLatLng(latlng);
   const box = document.getElementById("point-box");
+  if (mobile()) setDrawer(false);
   const prevDay = box.querySelector("select[name=day]")?.value || "";
   const prevMonth = box.querySelector("select[name=month]")?.value || "";
   box.hidden = false;

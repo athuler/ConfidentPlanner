@@ -38,6 +38,10 @@ input[type=number] { width: 70px; }
 #point-box .close { border: none; background: none; font-size: 18px; cursor: pointer; }
 .yes { color: #b30000; font-weight: 600; } .no { color: #1a7f37; font-weight: 600; }
 
+/* no tap highlight / focus ring on tapped polygons (touch browsers draw a translucent box over the element's bounds) */
+#map, #map * { -webkit-tap-highlight-color: transparent; }
+#map .leaflet-interactive:focus, #map .leaflet-interactive:focus-visible { outline: none; }
+
 /* muted basemap: desaturate + lighten the raster tiles so the choropleth stands out */
 .leaflet-tile-pane { filter: grayscale(1) brightness(1.08) contrast(0.85); }
 
@@ -86,3 +90,40 @@ fieldset.not-used { opacity: .45; }
 #about li { margin: 2px 0; }
 #about a { color: #2b6cb0; text-decoration: none; }
 #about a:hover { text-decoration: underline; }
+#mobile-bar, #map-back { display: none; }
+
+/* ---- phones / small tablets: full-screen map, filters in a slide-up drawer, details as a bottom sheet ---- */
+@media (max-width: 768px) {
+  body { display: block; overflow: hidden; }
+  #map { position: fixed; inset: 0; height: 100vh; height: 100dvh; width: 100%; }
+  #sidebar {
+    position: fixed; left: 0; right: 0; bottom: 0; width: auto; flex: none; z-index: 1100;
+    height: 85vh; height: 85dvh; padding: 0 14px 24px; border-right: none; border-top: 1px solid #c8ced6;
+    border-radius: 14px 14px 0 0; box-shadow: 0 -6px 24px rgba(0,0,0,.18); overscroll-behavior: contain;
+    transform: translateY(calc(100% - 56px)); transition: transform .25s ease;
+  }
+  body.drawer-open #sidebar { transform: none; }
+  #mobile-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 56px;
+    margin: 0 -14px 10px; padding: 0 14px; position: sticky; top: 0; z-index: 2; background: #f7f8fa;
+    border-bottom: 1px solid #e3e7ec; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  #mobile-bar::before { content: ""; position: absolute; top: 6px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: #c8ced6; }
+  #mbar-rate { font-size: 20px; font-weight: 700; }
+  .mbar-left { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  #mbar-view { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #drawer-toggle { flex: none; padding: 8px 12px; }
+  #sidebar h1 { font-size: 18px; }
+  #months label, #days label { min-width: 0; }
+  #months, #days { display: grid; grid-template-columns: repeat(4, 1fr); }
+  #months legend, #days legend, #months .ml-hint, #days .ml-hint { grid-column: 1 / -1; }
+  #point-box {  /* bottom sheet, sitting on top of the drawer's 56 px peek bar */
+    position: fixed; top: auto; left: 0; right: 0; bottom: 56px; width: auto; max-height: 50vh; max-height: 50dvh;
+    border-radius: 12px 12px 0 0; border-bottom: none; z-index: 1200; box-shadow: 0 -4px 16px rgba(0,0,0,.18);
+  }
+  #map-back { display: block; position: absolute; top: 84px; left: 12px; z-index: 1000; padding: 8px 12px; border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,.2); font-weight: 600; }
+  #map-back[hidden] { display: none; }
+  .leaflet-control-attribution { font-size: 10px; }
+  .leaflet-top.leaflet-left .leaflet-control-zoom { margin-top: 12px; }
+}
+@media (max-width: 360px) { .btn-group button .rng { display: none; } }

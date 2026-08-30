@@ -19,6 +19,10 @@
 </head>
 <body>
   <aside id="sidebar">
+    <div id="mobile-bar" role="button" aria-label="show or hide filters">
+      <div class="mbar-left"><span id="mbar-rate">–</span> <span id="mbar-view" class="muted">All boroughs</span></div>
+      <button type="button" id="drawer-toggle">Filters ▲</button>
+    </div>
     <h1>Confident Planner</h1>
     <p class="sub">Tool to find the likelihood of a London planning application being approved</p>
     <div id="dataset" class="muted">loading…</div>
@@ -129,6 +133,7 @@
     </footer>
   </aside>
   <div id="map">
+    <button type="button" id="map-back" hidden>◀ London</button>
     <div id="point-box" hidden></div>
     <div id="loading" hidden><span class="spinner"></span> Updating…</div>
   </div>
