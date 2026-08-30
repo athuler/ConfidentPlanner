@@ -4,6 +4,8 @@ Tool to find the likelihood of a London planning application being approved.
 
 Built as part of the [House London #1 data hackathon](https://house-london.uk/) hosted at [Newspeak House](https://newspeak.house/). Won the 2nd place jury prize and the 2nd place people's choice prize.
 
+Explore it at [confidentplanner.andreithuler.com](https://confidentplanner.andreithuler.com).
+
 ## Team Members
 
 - Andrei Thüler ([GitHub](https://github.com/athuler) / [LinkedIn](https://www.linkedin.com/in/andreithuler/) / [Website](https://andreithuler.com))
@@ -12,12 +14,27 @@ Built as part of the [House London #1 data hackathon](https://house-london.uk/) 
 - Mark Fothergill ([GitHub](https://github.com/markfoth) / [LinkedIn](https://www.linkedin.com/in/mark-fothergill/))
 - Steven Li ([GitHub](https://github.com/InForsaken) / [LinkedIn](https://www.linkedin.com/in/stevenli02))
 
+## Repository layout
+
+- `Processing/` — data pipeline (`processing.py`)
+- `Model/` — model training scripts and the standalone predictor + pickles
+- `frontend/` + `run.py` — Flask web app
+- `Data/` — git-ignored inputs, caches and processed outputs
+- `tests/` — `python -m pytest tests -q`
 
 ## Installation
 
-Quick start: `python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`, process a year with
-`python Processing/processing.py --years 2026 --per-year`, then `python run.py` and open http://localhost:5000
-(details under [Running the local server](#running-the-local-server)).
+```bash
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Put the conservation-area GeoJSON (`Data/Conservation_Areas_*.geojson`) and the ward-density workbook
+(`Data/TS006-Population-Density-2021-wd-ONS.xlsx`) in `Data/` — both are git-ignored. Everything else is downloaded
+and cached on first run. The web app's ML toggle needs `scikit-learn>=1.9` (in `requirements.txt`).
+
+Quick start: process one year with `python Processing/processing.py --years 2026 --per-year`, then `python run.py`
+and open http://localhost:5000.
 
 ## Processing
 
@@ -36,20 +53,12 @@ for a configurable year range, then enriches each application with:
 | `Distance to Park (m)` | nearest OpenStreetMap `leisure=park` (Overpass), optional |
 | `dh_*` (~190 columns) | every other Datahub field, flattened (`dh_ward`, `dh_uprn`, `dh_application_type_full`, `dh_application_details.site_area`, residential unit / parking / infrastructure details, …) |
 
-### Setup
-
-```bash
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-```
-
-Put the conservation-area GeoJSON and the ward-density workbook in `Data/` (both are git-ignored / large).
-
 ### Run
 
 ```bash
 python Processing/processing.py                          # current year only (default), all steps
-python Processing/processing.py --years 2016-2026        # full history (~940k rows, ~10 min download)
+python Processing/processing.py --years 2016-2026 --per-year   # full history (~940k rows), one file per year, newest first (what the web app reads)
+python Processing/processing.py --years 2016-2026        # same, as a single file
 python Processing/processing.py --years 2024 --skip-parks
 python Processing/processing.py --years 2026 --limit 15 --show-sample 5 -v   # quick check on a few rows
 python Processing/processing.py --columns slim           # fewer Datahub columns = faster download
@@ -57,13 +66,13 @@ python Processing/processing.py --source csv             # use the export CSVs i
 python Processing/processing.py --refresh-cache datahub  # force a re-download
 ```
 
-Flags: `--years 2016-2026|2024|2019,2021`, `--columns default|full|slim|<comma list>`, `--steps geocode,conservation,flood,density,parks`,
-`--limit N`, `--lpa-numbers a,b`, `--show-sample K`, `--refresh-cache [all|datahub|postcodes|parks|flood]`, `-v`.
+Flags: `--years 2016-2026|2024|2019,2021`, `--per-year`, `--columns default|full|slim|<comma list>`, `--steps geocode,conservation,flood,density,parks`,
+`--limit N`, `--lpa-numbers a,b`, `--show-sample K`, `--max-null-frac F`, `--refresh-cache [all|datahub|postcodes|parks|flood]`, `-v`.
 
-Output: `Data/processed/data.csv` + `.parquet`; log in `Data/processed/processing.log`.
-Before writing, columns whose values are more than 60% missing/empty are dropped
-(`--max-null-frac` to change; NaN, `""` and whitespace-only all count as missing) — key
-columns (target `Approved?`, descriptions, dates, coordinates, ids) are always kept.
+Output: `Data/processed/applications_enriched[_<year>].csv` + `.parquet` (`--out` to change); log in
+`Data/processed/processing.log`. `--max-null-frac 0.6` drops columns that are more than 60 % missing/empty (NaN, `""`
+and whitespace-only all count) — key columns (`Approved?`, descriptions, dates, coordinates, ids) are always kept; the
+default `1.0` keeps every column, which the web app relies on.
 
 ### Caching
 
@@ -87,34 +96,6 @@ A repeat run makes no API calls except one cheap count per year. Set `LONDON_DAT
 
 ## Web app (`frontend/`, `run.py`)
 
-### Running the local server
-
-```bash
-# 1. one-time setup (same venv as the pipeline)
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-
-# 2. make sure there is data to show: at least one processed year
-python Processing/processing.py --years 2026 --per-year          # quick; ~a few minutes
-# python Processing/processing.py --years 2016-2026 --per-year   # everything, newest year first (can run in the background)
-
-# 3. start the server
-source venv/bin/activate
-python run.py                       # http://localhost:5000
-```
-
-Flags: `--port 5000` (change the port), `--host 0.0.0.0` (default: reachable from other machines on your network; use
-`--host 127.0.0.1` for local only), `--debug` (Flask auto-reload; slower, reloads the data on every code edit).
-Stop it with `Ctrl+C`.
-
-Startup takes ~10–30 s while it loads every `Data/processed/applications_enriched_<year>.parquet`, downloads the
-borough boundaries once (cached in `Data/reference/`), and loads the ML model from `Model/` if present — watch for
-`Running on http://…` in the terminal. If `Data/processed/` is empty the map has no colours: run step 2 first.
-You can keep the pipeline running while the server is up; the app picks up each newly finished year automatically.
-
-Environment quirks: the app needs `scikit-learn>=1.9` for the ML toggle (otherwise it stays greyed out with the
-error shown under the model buttons); on WSL2 open the URL from a Windows browser as usual.
-
 One page: a London map with each borough coloured by the share of decided applications that were approved.
 Click a borough to zoom in and see a ~500 m grid heatmap of approval rates; the overlay shows the borough's stats (by conservation/flood/density/day/month/application type);
 click anywhere inside it to assess that point — a box shows the likelihood (nearest decided applications within 250 m–2 km), the rate among
@@ -123,72 +104,25 @@ neighbours with the same conservation/flood status, the borough average, and the
 Sidebar toggles (flood zone, conservation area, month, day of the week, application type, year range) re-query
 every view.
 
-The app reads every `Data/processed/applications_enriched_<year>.parquet` and reloads automatically when the
-background pipeline (`python Processing/processing.py --years 2016-2026 --per-year`, newest year first)
-finishes another year.
-
-### Deploying to Google Cloud Run
-
-The app runs as one container (`Dockerfile`) with the processed data **baked into the image**; it scales to zero, so an
-idle deployment costs ≈ $0 (only ~1.7 GB of image/bucket storage, a few cents/month). `cloudbuild.yaml` builds, pushes
-and deploys; a Cloud Build trigger runs it on every push to `main`.
-
-Because the data files are git-ignored, the build fetches them from a private bucket (`gs://<project>-data`) — this
-bucket is only the hand-off from your machine to Cloud Build; the running service never reads it.
-
-One-time setup (replace `PROJECT`):
+### Running the local server
 
 ```bash
-gcloud projects create PROJECT --name="Confident Planner"
-gcloud billing projects link PROJECT --billing-account=<your billing account id>
-gcloud config set project PROJECT
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
-    containerregistry.googleapis.com storage.googleapis.com
-
-# data bucket + first upload (re-run the rsync whenever the pipeline produces new parquet files)
-gsutil mb -l europe-west1 -b on gs://PROJECT-data
-gsutil -m rsync -r -x '.*\.csv$|.*\.log$|.*\.tmp$' Data/processed gs://PROJECT-data/Data/processed
-gsutil cp Data/reference/london_boroughs.geojson Data/reference/flood_risk_zones_london.geojson gs://PROJECT-data/Data/reference/
-gsutil cp Data/Conservation_Areas_*.geojson gs://PROJECT-data/Data/
-
-# build service account (Cloud Build triggers need an explicit one)
-gcloud iam service-accounts create confident-planner-build
-SA=confident-planner-build@PROJECT.iam.gserviceaccount.com
-for role in roles/run.admin roles/iam.serviceAccountUser roles/storage.objectViewer roles/storage.admin \
-            roles/artifactregistry.writer roles/logging.logWriter; do
-  gcloud projects add-iam-policy-binding PROJECT --member=serviceAccount:$SA --role=$role --condition=None
-done
-
-# first deploy from this machine (validates the whole path; ~5 min)
-gcloud builds submit --config cloudbuild.yaml --service-account=projects/PROJECT/serviceAccounts/$SA
-gcloud run services describe confident-planner --region europe-west1 --format='value(status.url)'
+source venv/bin/activate
+python Processing/processing.py --years 2026 --per-year          # at least one processed year is needed (~a few minutes)
+# python Processing/processing.py --years 2016-2026 --per-year   # everything, newest year first (can keep running in the background)
+python run.py                                                    # http://localhost:5000
 ```
 
-Then connect the GitHub repo in the console (Cloud Build → Repositories → 2nd gen → Link repository) and create a
-trigger: event *push to branch* `^main$`, configuration *Cloud Build configuration file* `cloudbuild.yaml`,
-service account `confident-planner-build`. From then on every merge to `main` redeploys.
+Flags: `--port 5000` (change the port), `--host 0.0.0.0` (default: reachable from other machines on your network; use
+`--host 127.0.0.1` for local only), `--debug` (Flask auto-reload; slower, reloads the data on every code edit).
+Stop it with `Ctrl+C`.
 
-Service settings live in `cloudbuild.yaml` substitutions: region `europe-west1` (Belgium — London's `europe-west2`
-does not support the free custom-domain mapping below), 1 vCPU, 4 GiB (the process holds
-~1.2 GB steady plus ~0.4 GB per request; 2 GiB runs at 85 %), `min-instances 0`, `max-instances 2`, CPU boost for
-faster cold starts (~20 s: the parquet files and two GeoJSONs are parsed at start). While serving, the instance
-costs ≈ $0.15 per hour of use; 2 M requests/month are free. If cold starts become annoying, `--min-instances 1`
-keeps one warm for ≈ $25/month.
-
-**Custom domain** (`confidentplanner.andreithuler.com`) — uses Cloud Run's built-in domain mapping (free, managed TLS):
-
-```bash
-# once: prove you own the parent domain (opens Search Console; add the TXT record it shows at your DNS provider)
-gcloud domains verify andreithuler.com
-gcloud beta run domain-mappings create --service confident-planner --domain confidentplanner.andreithuler.com --region europe-west1
-gcloud beta run domain-mappings describe --domain confidentplanner.andreithuler.com --region europe-west1
-```
-
-Then add the DNS record the last command prints — a `CNAME confidentplanner → ghs.googlehosted.com.` — at the
-provider that hosts `andreithuler.com`. The certificate is issued automatically once the record propagates
-(usually within an hour; up to 24 h) and https://confidentplanner.andreithuler.com serves the app.
-
-Local check of the image: `docker build -t confident-planner . && docker run -p 8080:8080 confident-planner`.
+Startup takes ~10–30 s while it loads every `Data/processed/applications_enriched_<year>.parquet`, downloads the
+borough boundaries once (cached in `Data/reference/`), and loads the ML model from `Model/` if present — watch for
+`Running on http://…` in the terminal. If `Data/processed/` is empty the map has no colours: run the pipeline first.
+You can keep the pipeline running while the server is up; the app picks up each newly finished year automatically.
+If the ML toggle stays greyed out, the error is shown under the model buttons (usually an old `scikit-learn`).
+On WSL2 open the URL from a Windows browser as usual.
 
 ### Prediction models
 
@@ -219,7 +153,7 @@ API: `/api/rates`, `/api/heatmap/<borough>`, `/api/point?lat=&lon=`, `/api/optio
 all accept the filter query params `flood=any|yes|no`, `conservation=any|yes|no`, `months=1,2`, `days=Monday,…`,
 `app_types=…`, `density=low,medium,high`, `year_min`, `year_max`.
 
-## Model
+## Model training (`Model/`)
 
 `Model/main.py` trains an approval-probability model on `Data/processed/data.csv` — produce it with
 `python Processing/processing.py --years 2016-2026 --out Data/processed/data.csv --max-null-frac 0.6`
@@ -246,4 +180,3 @@ python Model/main.py --embeddings Data/processed/description_vectors.csv --save-
 ```
 
 The standalone predictor (`Model/predict.py` + the two pickles) is what the web app's ML toggle loads; see `Model/AGENTS.md`.
-
