@@ -66,3 +66,4 @@ images:
 timeout: 1800s
 options:
   logging: CLOUD_LOGGING_ONLY
+  dynamicSubstitutions: true   # lets _DATA_BUCKET reference ${PROJECT_ID}
