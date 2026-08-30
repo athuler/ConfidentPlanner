@@ -33,7 +33,10 @@ steps:
   # 3. push both tags
   - name: gcr.io/cloud-builders/docker
     id: push
-    args: [push, --all-tags, gcr.io/$PROJECT_ID/${_SERVICE}]
+    args:
+      - push
+      - --all-tags
+      - gcr.io/$PROJECT_ID/${_SERVICE}
 
   # 4. deploy: scale to zero when idle, one small instance when busy
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
