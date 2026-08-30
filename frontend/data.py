@@ -9,6 +9,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 log = logging.getLogger("frontend.data")
 
@@ -25,6 +27,21 @@ MIN_N_BOROUGH = 5
 MIN_N_CELL = 3
 DENSITY_BANDS = [("low", 0, 5000), ("medium", 5000, 10000), ("high", 10000, None)]  # persons/km2 (ward)
 DEFAULT_CELL_M = 500.0
+
+
+def release_memory() -> None:
+    """Hand freed load-time memory back to the OS (Arrow pool + glibc arenas keep ~0.5 GB otherwise).
+
+    Matters on Cloud Run, where the instance size is billed on allocated memory."""
+    import ctypes
+    import gc
+
+    gc.collect()
+    pa.default_memory_pool().release_unused()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):  # non-glibc platform
+        pass
 
 
 class DataStore:
@@ -62,8 +79,8 @@ class DataStore:
         for name in sorted(files):
             path = self.dir / name
             try:
-                f = pd.read_parquet(path)
-                f = f[[c for c in COLUMNS if c in f.columns]]
+                present = set(pq.read_schema(path).names)
+                f = pd.read_parquet(path, columns=[c for c in COLUMNS if c in present])  # only the 17 columns we use, not all ~236
                 f["source"] = name
                 frames.append(f)
                 log.info("loaded %s: %d rows", name, len(f))
@@ -78,6 +95,7 @@ class DataStore:
         df = df[df["approved"].notna()].copy()
         df["approved"] = df["approved"].astype(bool)
         self._finish_load(df, files, t0)
+        release_memory()
 
     def _prep_common(self, df: pd.DataFrame) -> None:
         df["month"] = pd.to_numeric(df["Month"], errors="coerce").astype("Int64")

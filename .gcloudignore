@@ -1,0 +1,17 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.git/
+tests/
+Data/datahub/
+Data/cache/
+Data/processed/*.csv
+Data/processed/*.log
+Data/processed/*.tmp
+Data/reference/flood_pages/
+Data/reference/*.zip
+*.jsonl.gz
+*:Zone.Identifier
+# keep the git-ignored data assets in the upload (only used by manual `gcloud builds submit`; the trigger fetches them from GCS)
+!Data/processed/*.parquet

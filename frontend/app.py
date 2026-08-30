@@ -8,7 +8,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
 
-from .data import DataStore
+from .data import DataStore, release_memory
 from .geo import GeoLookups
 from .predictor import Predictor
 
@@ -56,6 +56,7 @@ def create_app() -> Flask:
     boroughs = load_boroughs()
     geo = GeoLookups(boroughs)
     mask = london_mask(boroughs)
+    release_memory()  # the GeoJSON parse leaves a lot of freed-but-retained memory behind
     predictor = None
     try:
         from .ml import ApprovalModel

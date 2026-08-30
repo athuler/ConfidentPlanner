@@ -1,0 +1,15 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.git/
+tests/
+Data/datahub/
+Data/cache/
+Data/processed/*.csv
+Data/processed/*.log
+Data/processed/*.tmp
+Data/reference/flood_pages/
+Data/reference/*.zip
+*.jsonl.gz
+*:Zone.Identifier
