@@ -1,7 +1,6 @@
 """Flask app: London approval-likelihood map."""
 from __future__ import annotations
 
-import json
 import logging
 import time
 from pathlib import Path
@@ -14,48 +13,14 @@ from .predictor import Predictor
 
 log = logging.getLogger("frontend.app")
 REPO_ROOT = Path(__file__).resolve().parent.parent
-BOROUGHS_GEOJSON = REPO_ROOT / "Data" / "reference" / "london_boroughs.geojson"
-BOROUGHS_URL = ("https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/"
-                "Local_Authority_Districts_December_2023_Boundaries_UK_BGC/FeatureServer/0/query"
-                "?where=LAD23CD%20LIKE%20%27E09%25%27&outFields=LAD23CD,LAD23NM&outSR=4326&f=geojson")
-
-
-def load_boroughs() -> dict:
-    if not BOROUGHS_GEOJSON.exists():
-        import requests
-        log.info("downloading borough boundaries")
-        BOROUGHS_GEOJSON.parent.mkdir(parents=True, exist_ok=True)
-        BOROUGHS_GEOJSON.write_bytes(requests.get(BOROUGHS_URL, timeout=120).content)
-    data = json.loads(BOROUGHS_GEOJSON.read_text())
-    for f in data["features"]:
-        f["properties"]["name"] = f["properties"].get("LAD23NM")
-    log.info("borough boundaries: %d features", len(data["features"]))
-    return data
-
-
-def london_mask(boroughs: dict) -> dict:
-    """World-ish rectangle minus the union of the boroughs: drawn white on top of the tiles to crop to London."""
-    from shapely.geometry import box, mapping, shape
-    from shapely.ops import unary_union
-
-    union = unary_union([shape(f["geometry"]).buffer(0) for f in boroughs["features"]])
-    union = union.buffer(0.002).buffer(-0.002).simplify(0.0002)  # close sliver gaps at borough seams (~200 m), keep the outline
-    mask = box(-1.5, 50.8, 1.5, 52.2).difference(union)
-    if mask.geom_type == "MultiPolygon":  # drop tiny leftover fragments (unclosed gaps inside London)
-        parts = sorted(mask.geoms, key=lambda g: g.area, reverse=True)
-        log.info("london mask: dropping %d small fragment(s), areas %s", len(parts) - 1, [round(g.area, 6) for g in parts[1:]])
-        mask = parts[0]
-    log.info("london mask: %s with %d part(s)", mask.geom_type, len(getattr(mask, "geoms", [mask])))
-    return {"type": "Feature", "geometry": mapping(mask), "properties": {}}
 
 
 def create_app() -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     store = DataStore()
     store.refresh()
-    boroughs = load_boroughs()
-    geo = GeoLookups(boroughs)
-    mask = london_mask(boroughs)
+    geo = GeoLookups()  # pre-parsed bundle when available, else the raw GeoJSON files
+    boroughs, mask = geo.boroughs_geojson, geo.mask
     release_memory()  # the GeoJSON parse leaves a lot of freed-but-retained memory behind
     predictor = None
     try:

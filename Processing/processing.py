@@ -854,6 +854,28 @@ class PolygonIndex:
         self.tree = STRtree(self.geoms) if self.geoms else None
         log.info("%s: %d features in file, %d in London bbox, %d unreadable; index built in %.1fs", name, len(features), len(self.geoms), skipped, time.perf_counter() - t0)
 
+    @classmethod
+    def from_wkb(cls, name: str, wkb: list[bytes], props: list[dict]) -> "PolygonIndex":
+        """Rebuild an index from the geometries saved by to_wkb() - ~50x faster than parsing GeoJSON."""
+        from shapely import from_wkb
+        from shapely.strtree import STRtree
+
+        t0 = time.perf_counter()
+        self = cls.__new__(cls)
+        self.name = name
+        self.geoms = list(from_wkb(wkb)) if wkb else []
+        self.props = list(props)
+        self.tree = STRtree(self.geoms) if self.geoms else None
+        log.info("%s: %d polygons from WKB bundle; index built in %.1fs", name, len(self.geoms), time.perf_counter() - t0)
+        return self
+
+    def to_wkb(self, keep_props: tuple[str, ...] | None = None) -> dict:
+        """Serialisable form of the (London-filtered, validity-fixed) index for the app's geo bundle."""
+        from shapely import to_wkb
+
+        props = [({k: p.get(k) for k in keep_props if k in p} if keep_props else p) for p in self.props]
+        return {"wkb": list(to_wkb(self.geoms)), "props": props}
+
     def lookup(self, lats, lons) -> list[list[dict]]:
         """For each (lat, lon) return the list of property dicts of containing polygons."""
         from shapely.geometry import Point
@@ -882,6 +904,78 @@ def find_conservation_geojson(data_dir: Path) -> Path | None:
         if "conservation" in p.name.lower():
             return p
     return None
+
+
+def london_mask(boroughs: dict) -> dict:
+    """World-ish rectangle minus the union of the boroughs: drawn white on top of the tiles to crop the map to London."""
+    from shapely.geometry import box, mapping, shape
+    from shapely.ops import unary_union
+
+    union = unary_union([shape(f["geometry"]).buffer(0) for f in boroughs["features"]])
+    union = union.buffer(0.002).buffer(-0.002).simplify(0.0002)  # close sliver gaps at borough seams (~200 m), keep the outline
+    mask = box(-1.5, 50.8, 1.5, 52.2).difference(union)
+    if mask.geom_type == "MultiPolygon":  # drop tiny leftover fragments (unclosed gaps inside London)
+        parts = sorted(mask.geoms, key=lambda g: g.area, reverse=True)
+        log.info("london mask: dropping %d small fragment(s), areas %s", len(parts) - 1, [round(g.area, 6) for g in parts[1:]])
+        mask = parts[0]
+    log.info("london mask: %s with %d part(s)", mask.geom_type, len(getattr(mask, "geoms", [mask])))
+    return {"type": "Feature", "geometry": mapping(mask), "properties": {}}
+
+
+BOROUGHS_URL = ("https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/"
+                "Local_Authority_Districts_December_2023_Boundaries_UK_BGC/FeatureServer/0/query"
+                "?where=LAD23CD%20LIKE%20%27E09%25%27&outFields=LAD23CD,LAD23NM&outSR=4326&f=geojson")
+
+
+def load_boroughs_geojson(reference_dir: Path, session=None) -> dict:
+    """ONS LAD Dec-2023 boundaries for the 33 London boroughs (downloaded once into Data/reference/)."""
+    path = reference_dir / "london_boroughs.geojson"
+    if not path.exists():
+        log.info("downloading borough boundaries")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((session or requests).get(BOROUGHS_URL, timeout=120).content)
+    data = json.loads(path.read_text())
+    for f in data["features"]:
+        f["properties"]["name"] = f["properties"].get("LAD23NM")
+    log.info("borough boundaries: %d features", len(data["features"]))
+    return data
+
+
+GEO_BUNDLE_NAME = "app_geo.pkl"
+GEO_BUNDLE_VERSION = 1
+CONSERVATION_PROPS = ("NAME", "LPA")
+FLOOD_PROPS = ("flood-risk-level", "flood-risk-type", "name", "reference")
+
+
+def build_geo_bundle(data_dir: Path, reference_dir: Path, boroughs_geojson: dict, out: Path | None = None) -> Path:
+    """Pre-parse the polygon layers the web app needs into one pickle of WKB geometries + trimmed properties.
+
+    The app loads this in ~1 s instead of JSON-parsing 240 MB of GeoJSON (~25 s on a Cloud Run vCPU). Contains the
+    conservation areas and flood zones (London bbox only, invalid rings fixed), the borough GeoJSON and the map mask."""
+    import pickle
+
+    out = out or reference_dir / GEO_BUNDLE_NAME
+    t0 = time.perf_counter()
+    cons = find_conservation_geojson(data_dir)
+    flood = reference_dir / "flood_risk_zones_london.geojson"
+    bundle = {
+        "version": GEO_BUNDLE_VERSION,
+        "built_at": datetime.now(timezone.utc).isoformat(),
+        "boroughs": boroughs_geojson,
+        "mask": london_mask(boroughs_geojson),
+        "conservation": PolygonIndex("conservation areas", load_geojson_features(cons)).to_wkb(CONSERVATION_PROPS) if cons else None,
+        "flood": PolygonIndex("flood risk zones", load_geojson_features(flood)).to_wkb(FLOOD_PROPS) if flood.exists() else None,
+    }
+    for key in ("conservation", "flood"):
+        if bundle[key] is None:
+            log.warning("geo bundle: no %s layer available - the app will report it as unknown", key)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(".pkl.tmp")
+    with open(tmp, "wb") as fh:
+        pickle.dump(bundle, fh, protocol=pickle.HIGHEST_PROTOCOL)
+    tmp.replace(out)
+    log.info("Wrote %s (%.1f MB) in %.1fs", out, out.stat().st_size / 1e6, time.perf_counter() - t0)
+    return out
 
 
 def unique_points(df: pd.DataFrame):
@@ -1084,6 +1178,13 @@ def add_distance_to_park(df: pd.DataFrame, cache: JsonCache, session: requests.S
 # 7. Orchestration
 # --------------------------------------------------------------------------- #
 NEW_COLUMNS = ["Approved?", "Lat", "Lon", "Borough", "Month", "Day of the Week", "Conservation Area?", "Population Density", "Distance to Park (m)", "Flood risk?"]
+# What the web app reads from the per-year files (frontend/data.py COLUMNS) ...
+APP_COLUMNS = ["Borough", "Approved?", "Lat", "Lon", "Month", "Day of the Week", "Flood risk?", "Conservation Area?",
+               "Application type", "Valid date", "Population Density", "ward_name", "Distance to Park (m)", "Population Density (OA)"]
+# ... plus what the ML model needs to score a stored application (frontend/ml.py, Model/predict.py) and an id.
+MODEL_COLUMNS = ["dh_id", "Description", "dh_application_type_full", "dh_decision_process", "dh_cil_liability",
+                 "dh_application_details.site_area", "dh_application_details.total_gia_gained"]
+PER_YEAR_COLUMNS = APP_COLUMNS + MODEL_COLUMNS  # the ~215 other Datahub columns have no reader; --all-columns keeps them
 SAMPLE_COLUMNS = ["LPA Number", "Borough", "Postcode", "Valid date", "Decision", "Approved?", "Lat", "Lon", "latlon_source", "Month", "Day of the Week",
                   "Conservation Area?", "conservation_area_name", "Flood risk?", "flood_zone", "Population Density", "population_density_level", "Population Density (OA)", "ward_name", "postcode_source",
                   "Distance to Park (m)", "dh_ward", "dh_application_type_full", "dh_application_details.site_area"]
@@ -1200,16 +1301,27 @@ def run_pipeline(df: pd.DataFrame, args, out: Path, caches, session, data_dir: P
 
     with timed("write"):
         out.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(out, index=False, date_format="%Y-%m-%d")
-        log.info("Wrote %s (%.1f MB)", out, out.stat().st_size / 1e6)
+        slim = getattr(args, "per_year", False) and not getattr(args, "all_columns", False)
+        if slim:
+            # per-year files feed the web app + model scoring only: keep their columns, skip the unread CSV twin
+            keep = [c for c in PER_YEAR_COLUMNS if c in df.columns]
+            missing = [c for c in PER_YEAR_COLUMNS if c not in df.columns]
+            if missing:
+                log.warning("per-year output: %d expected column(s) missing: %s", len(missing), ", ".join(missing))
+            write_df = df[keep]
+            log.info("per-year output: keeping %d of %d columns (--all-columns to keep everything)", len(keep), df.shape[1])
+        else:
+            write_df = df
+            df.to_csv(out, index=False, date_format="%Y-%m-%d")
+            log.info("Wrote %s (%.1f MB)", out, out.stat().st_size / 1e6)
         try:
-            pq = df.copy()
+            pq = write_df.copy()
             for c in pq.columns[pq.dtypes == object]:
                 pq[c] = pq[c].map(lambda v: v if v is None or isinstance(v, str) or (isinstance(v, float) and pd.isna(v)) else json.dumps(v) if isinstance(v, (list, dict)) else str(v))
             tmp = out.with_suffix(".parquet.tmp")
             pq.to_parquet(tmp, index=False)
             tmp.replace(out.with_suffix(".parquet"))
-            log.info("Wrote %s", out.with_suffix(".parquet"))
+            log.info("Wrote %s (%.1f MB, %d columns)", out.with_suffix(".parquet"), out.with_suffix(".parquet").stat().st_size / 1e6, pq.shape[1])
         except Exception as exc:  # noqa: BLE001
             log.warning("Parquet output skipped: %s", exc)
     summarise(df, caches, rows_in, args.show_sample)
@@ -1220,7 +1332,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", choices=["datahub", "csv"], default="datahub")
     ap.add_argument("--years", default=str(datetime.now().year), help="Datahub valid_date years, e.g. 2016-2026, 2024, 2019,2021 (default: current year only)")
-    ap.add_argument("--per-year", action="store_true", help="process each year separately, newest first, writing applications_enriched_<year>.*")
+    ap.add_argument("--per-year", action="store_true", help="process each year separately, newest first, writing applications_enriched_<year>.parquet "
+                                                              "with only the columns the web app / model read (see PER_YEAR_COLUMNS)")
+    ap.add_argument("--all-columns", action="store_true", help="with --per-year: keep every column (and write the CSV twin) as single-file mode does")
+    ap.add_argument("--geo-bundle", action="store_true", help=f"only (re)build Data/reference/{GEO_BUNDLE_NAME} - the pre-parsed polygon layers the web app loads")
     ap.add_argument("--columns", default="default", help="Datahub column set: default | full | slim | comma list")
     ap.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     ap.add_argument("--out", type=Path, default=None, help="default: <data-dir>/processed/applications_enriched.csv")
@@ -1257,6 +1372,10 @@ def main(argv=None) -> int:
             p.unlink(missing_ok=True)
 
     session = make_session()
+    if args.geo_bundle:
+        with timed("geo bundle"):
+            build_geo_bundle(data_dir, reference_dir, load_boroughs_geojson(reference_dir, session))
+        return 0
     dh_session = datahub_session()
     columns = args.columns if args.columns in DATAHUB_COLUMN_SETS else [c.strip() for c in args.columns.split(",")]
 
@@ -1287,6 +1406,9 @@ def main(argv=None) -> int:
             with timed(f"load {year}"):
                 df = load_datahub([year], datahub_dir, columns, refresh("datahub"), dh_session)
             run_pipeline(df, args, year_out, caches, session, data_dir, reference_dir, steps)
+    if not (reference_dir / GEO_BUNDLE_NAME).exists():
+        with timed("geo bundle"):
+            build_geo_bundle(data_dir, reference_dir, load_boroughs_geojson(reference_dir, session))
     return 0
 
 

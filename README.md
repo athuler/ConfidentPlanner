@@ -66,13 +66,17 @@ python Processing/processing.py --source csv             # use the export CSVs i
 python Processing/processing.py --refresh-cache datahub  # force a re-download
 ```
 
-Flags: `--years 2016-2026|2024|2019,2021`, `--per-year`, `--columns default|full|slim|<comma list>`, `--steps geocode,conservation,flood,density,parks`,
+Flags: `--years 2016-2026|2024|2019,2021`, `--per-year`, `--all-columns`, `--geo-bundle`, `--columns default|full|slim|<comma list>`, `--steps geocode,conservation,flood,density,parks`,
 `--limit N`, `--lpa-numbers a,b`, `--show-sample K`, `--max-null-frac F`, `--refresh-cache [all|datahub|postcodes|parks|flood]`, `-v`.
 
-Output: `Data/processed/applications_enriched[_<year>].csv` + `.parquet` (`--out` to change); log in
-`Data/processed/processing.log`. `--max-null-frac 0.6` drops columns that are more than 60 % missing/empty (NaN, `""`
-and whitespace-only all count) — key columns (`Approved?`, descriptions, dates, coordinates, ids) are always kept; the
-default `1.0` keeps every column, which the web app relies on.
+Output: single-file mode writes `Data/processed/applications_enriched.csv` + `.parquet` with every column (`--out` to
+change; this is the model-training dataset). `--per-year` writes `applications_enriched_<year>.parquet` only, trimmed to
+the ~21 columns the web app and the model actually read (`PER_YEAR_COLUMNS` in `processing.py`; `--all-columns` keeps
+everything) — ~110 MB for 2016–2026 instead of ~250 MB — and, if missing, builds `Data/reference/app_geo.pkl`, the
+pre-parsed conservation/flood polygon layers the app loads in ~1 s (`--geo-bundle` rebuilds it on its own).
+Log in `Data/processed/processing.log`. `--max-null-frac 0.6` drops columns that are more than 60 % missing/empty
+(NaN, `""` and whitespace-only all count) — key columns (`Approved?`, descriptions, dates, coordinates, ids) are always
+kept; the default `1.0` keeps every column.
 
 ### Caching
 
@@ -119,9 +123,10 @@ Runs in debug mode by default: template edits show on the next refresh, Python e
 `--no-debug` (plain server, no reloading). Stop it with `Ctrl+C`. Production uses gunicorn via `frontend/wsgi.py`
 instead (see [deploy.md](deploy.md)).
 
-Startup takes ~10–30 s while it loads every `Data/processed/applications_enriched_<year>.parquet`, downloads the
-borough boundaries once (cached in `Data/reference/`), and loads the ML model from `Model/` if present — watch for
-`Running on http://…` in the terminal. If `Data/processed/` is empty the map has no colours: run the pipeline first.
+Startup takes a few seconds: it loads every `Data/processed/applications_enriched_<year>.parquet`, the polygon
+bundle `Data/reference/app_geo.pkl` (falls back to parsing the raw GeoJSON files, ~15 s, if the bundle is missing),
+downloads the borough boundaries once (cached in `Data/reference/`), and loads the ML model from `Model/` if
+present — watch for `Running on http://…` in the terminal. If `Data/processed/` is empty the map has no colours: run the pipeline first.
 You can keep the pipeline running while the server is up; the app picks up each newly finished year automatically.
 If the ML toggle stays greyed out, the error is shown under the model buttons (usually an old `scikit-learn`).
 On WSL2 open the URL from a Windows browser as usual.

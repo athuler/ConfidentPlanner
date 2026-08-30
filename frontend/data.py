@@ -17,9 +17,10 @@ log = logging.getLogger("frontend.data")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROCESSED_DIR = REPO_ROOT / "Data" / "processed"
 
-COLUMNS = ["dh_id", "Borough", "Approved?", "Lat", "Lon", "Month", "Day of the Week", "Flood risk?", "flood_zone",
-           "Conservation Area?", "conservation_area_name", "Application type", "Valid date", "Population Density",
-           "ward_name", "Distance to Park (m)", "Population Density (OA)"]
+# Everything the app reads from the per-year files (mirrored by Processing.processing.APP_COLUMNS, which decides
+# what the pipeline writes) - adding a column here means adding it there too.
+COLUMNS = ["Borough", "Approved?", "Lat", "Lon", "Month", "Day of the Week", "Flood risk?", "Conservation Area?",
+           "Application type", "Valid date", "Population Density", "ward_name", "Distance to Park (m)", "Population Density (OA)"]
 POINT_MIN_N = 30
 POINT_RADII_M = [250, 500, 1000, 2000]
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -80,7 +81,7 @@ class DataStore:
             path = self.dir / name
             try:
                 present = set(pq.read_schema(path).names)
-                f = pd.read_parquet(path, columns=[c for c in COLUMNS if c in present])  # only the 17 columns we use, not all ~236
+                f = pd.read_parquet(path, columns=[c for c in COLUMNS if c in present])  # only the columns we use
                 f["source"] = name
                 frames.append(f)
                 log.info("loaded %s: %d rows", name, len(f))

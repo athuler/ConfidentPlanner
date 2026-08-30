@@ -14,10 +14,11 @@ COPY frontend/ frontend/
 COPY Model/ Model/
 COPY run.py .
 
-# data assets - explicit paths only: never `COPY Data` (1.3 GB of CSVs + Datahub dumps)
+# data assets - explicit paths only: never `COPY Data` (CSVs, Datahub dumps, raw GeoJSON).
+# processed/*.parquet: the slim per-year files (~110 MB); app_geo.pkl: pre-parsed polygon layers + borough
+# boundaries + map mask (~70 MB), built by `python Processing/processing.py --geo-bundle`.
 COPY Data/processed/*.parquet Data/processed/
-COPY Data/reference/london_boroughs.geojson Data/reference/flood_risk_zones_london.geojson Data/reference/
-COPY Data/*.geojson Data/
+COPY Data/reference/app_geo.pkl Data/reference/london_boroughs.geojson Data/reference/
 
 EXPOSE 8080
 # one worker (the in-memory DataStore is ~1-2 GB; do not duplicate it), threads for concurrency,

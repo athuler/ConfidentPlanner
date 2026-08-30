@@ -51,7 +51,10 @@ class Predictor:
 
         df = self.store.df
         ok = df["x_m"].notna() & df["y_m"].notna()
-        rows = df.loc[ok, ["ward_name", "density", "park_m", "Population Density (OA)"]].reset_index(drop=True)
+        cols = [c for c in ["ward_name", "density", "park_m", "Population Density (OA)"] if c in df.columns]
+        rows = df.loc[ok, cols].reset_index(drop=True)
+        if "Population Density (OA)" not in rows:
+            rows["Population Density (OA)"] = np.nan
         t0 = time.perf_counter()
         self._tree = STRtree(points(df.loc[ok, "x_m"].to_numpy(), df.loc[ok, "y_m"].to_numpy()))
         self._tree_rows, self._tree_key = rows, self.store.loaded_at

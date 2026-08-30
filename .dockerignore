@@ -7,6 +7,9 @@ tests/
 Data/datahub/
 Data/cache/
 Data/processed/*.csv
+Data/processed/full/
+Data/*.geojson
+Data/reference/flood_risk_zones_london.geojson
 Data/processed/*.log
 Data/processed/*.tmp
 Data/reference/flood_pages/
