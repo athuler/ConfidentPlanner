@@ -51,7 +51,10 @@ python Processing/processing.py --refresh-cache datahub  # force a re-download
 Flags: `--years 2016-2026|2024|2019,2021`, `--columns default|full|slim|<comma list>`, `--steps geocode,conservation,flood,density,parks`,
 `--limit N`, `--lpa-numbers a,b`, `--show-sample K`, `--refresh-cache [all|datahub|postcodes|parks|flood]`, `-v`.
 
-Output: `Data/processed/applications_enriched.csv` + `.parquet`; log in `Data/processed/processing.log`.
+Output: `Data/processed/data.csv` + `.parquet`; log in `Data/processed/processing.log`.
+Before writing, columns whose values are more than 60% missing/empty are dropped
+(`--max-null-frac` to change; NaN, `""` and whitespace-only all count as missing) — key
+columns (target `Approved?`, descriptions, dates, coordinates, ids) are always kept.
 
 ### Caching
 
@@ -143,3 +146,32 @@ What the ML model actually reacts to (measured at a fixed point, Householder wit
 API: `/api/rates`, `/api/heatmap/<borough>`, `/api/point?lat=&lon=`, `/api/options`, `/api/boroughs.geojson` —
 all accept the filter query params `flood=any|yes|no`, `conservation=any|yes|no`, `months=1,2`, `days=Monday,…`,
 `app_types=…`, `density=low,medium,high`, `year_min`, `year_max`.
+
+## Model
+
+`Model/main.py` trains an approval-probability model on `Data/processed/data.csv` — produce it with
+`python Processing/processing.py --years 2016-2026 --out Data/processed/data.csv --max-null-frac 0.6`
+(the web app's per-year files keep every column; the training set prunes mostly-empty ones):
+
+- **Recency-weighted 80/20 split** — both train and test sets skew recent: every row
+  gets a weight (`WEIGHT_FOR_YEAR` in `Model/main.py`: 1.0 up to 2021, ramping to x10 for 2026),
+  the same weights are passed to the fit as `sample_weight`, and the test set is drawn with
+  probabilities proportional to the weights. `--no-weights` runs the unweighted ablation.
+- **Model** — sparse one-hot + scaled numerics into `LogisticRegression` (calibrated
+  probabilities, fast on ~1M sparse rows). Metrics: ROC-AUC, PR-AUC, Brier, log loss.
+- `--embeddings Data/processed/description_vectors.csv` joins description vectors
+  (32 SVD components, fit on train only) as extra features.
+- `--save-model` pickles the fitted pipeline to `Data/processed/approval_model.pkl`.
+
+`Model/embed_descriptions.py` embeds every distinct application description into a fixed-size
+vector and writes `Data/processed/description_vectors.csv` (`description,vector` — the vector is
+a JSON array string). Default embedder is TF-IDF over hashed 1-2 grams (scikit-learn only,
+offline, 512 dims); pass `--model sentence-transformers/all-MiniLM-L6-v2` for semantic vectors.
+
+```bash
+python Model/embed_descriptions.py                      # needs data.csv first
+python Model/main.py --embeddings Data/processed/description_vectors.csv --save-model
+```
+
+The standalone predictor (`Model/predict.py` + the two pickles) is what the web app's ML toggle loads; see `Model/AGENTS.md`.
+
