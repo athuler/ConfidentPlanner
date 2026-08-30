@@ -1,10 +1,19 @@
 # Confident Planner
 
-Directories
-- Processing: Data processing from start to end
-- Model: Trains, tunes, and runs model
-- FrontEnd
-- Data: raw data sources
+Tool to find the likelihood of a London planning application being approved.
+
+Built as part of the [House London #1 data hackathon](https://house-london.uk/) hosted at [Newspeak House](https://newspeak.house/). Won the 2nd place jury prize and the 2nd place people's choice prize.
+
+## Team Members
+
+- Andrei Thüler ([GitHub](https://github.com/athuler) / [LinkedIn](https://www.linkedin.com/in/andreithuler/) / [Website](https://andreithuler.com))
+- Amy Li ([GitHub](https://github.com/amyli06) / [LinkedIn](https://www.linkedin.com/in/amy-li-0a28192b8/))
+- Anson Kong ([GitHub](https://github.com/Hotstopper) / [LinkedIn](https://www.linkedin.com/in/anson-kongtszhin/))
+- Mark Fothergill ([GitHub](https://github.com/markfoth) / [LinkedIn](https://www.linkedin.com/in/mark-fothergill/))
+- Steven Li ([GitHub](https://github.com/InForsaken) / [LinkedIn](https://www.linkedin.com/in/stevenli02))
+
+
+## Installation
 
 Quick start: `python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt`, process a year with
 `python Processing/processing.py --years 2026 --per-year`, then `python run.py` and open http://localhost:5000
