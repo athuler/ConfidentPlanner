@@ -67,6 +67,10 @@ Then add the DNS record the last command prints â€” a `CNAME confidentplanner â†
 provider that hosts `andreithuler.com`. The certificate is issued automatically once the record propagates
 (usually within an hour; up to 24 h) and https://confidentplanner.andreithuler.com serves the app.
 
+The service's default `*.run.app` URL is disabled (`--no-default-url` in `cloudbuild.yaml`; it returns 404), so the
+custom domain is the only public entry point. Re-enable temporarily with
+`gcloud run services update confident-planner --region europe-west1 --default-url` if you need it for debugging.
+
 ## Local check of the image
 
 `docker build -t confident-planner . && docker run -p 8080:8080 confident-planner`.

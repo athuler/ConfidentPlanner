@@ -57,6 +57,7 @@ steps:
       - --concurrency=80
       - --timeout=300
       - --cpu-boost
+      - --no-default-url   # only reachable via the custom domain (confidentplanner.andreithuler.com)
       - --quiet
 
 images:
