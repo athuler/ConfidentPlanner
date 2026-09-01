@@ -11,7 +11,7 @@ Explore it at [confidentplanner.andreithuler.com](https://confidentplanner.andre
 - Andrei Thüler ([GitHub](https://github.com/athuler) / [LinkedIn](https://www.linkedin.com/in/andreithuler/) / [Website](https://andreithuler.com))
 - Amy Li ([GitHub](https://github.com/amyli06) / [LinkedIn](https://www.linkedin.com/in/amy-li-0a28192b8/))
 - Anson Kong ([GitHub](https://github.com/Hotstopper) / [LinkedIn](https://www.linkedin.com/in/anson-kongtszhin/))
-- Mark Fothergill ([GitHub](https://github.com/markfoth) / [LinkedIn](https://www.linkedin.com/in/mark-fothergill/))
+- Mark Fothergill ([GitHub](https://github.com/markfoth) / [LinkedIn](https://www.linkedin.com/in/mark-fothergill/) / [Website](https://brieflymarked.com/))
 - Steven Li ([GitHub](https://github.com/InForsaken) / [LinkedIn](https://www.linkedin.com/in/stevenli02))
 
 ## Repository layout
